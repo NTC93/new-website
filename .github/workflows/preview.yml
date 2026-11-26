@@ -2,7 +2,7 @@ name: Deploy NTC93 design preview
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/preview.yml']
+    paths: ['site/**', 'tools/**', '.github/workflows/preview.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -40,6 +40,10 @@ jobs:
               s = s.replace(url,'media/'+name)
           p.write_text(s)
           PY
+      - name: Build public subpages
+        run: |
+          python3 -m pip install --disable-pip-version-check beautifulsoup4 requests
+          python3 tools/import_pages.py
       - name: Verify isolated FTPS target and publish preview
         shell: bash
         run: |
@@ -56,8 +60,9 @@ jobs:
           upload "$RUNNER_TEMP/probe.txt" "$probe"
           status=$(curl --silent --show-error --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/received.txt" --write-out '%{http_code}' "https://neu.ntc93.de/$probe")
           [[ "$status" == 200 ]] && cmp -s "$RUNNER_TEMP/probe.txt" "$RUNNER_TEMP/received.txt" || { echo 'FTPS directory not confirmed as neu.ntc93.de, or HTTP access protected. No website files uploaded.'; exit 1; }
-          for f in site/media/*; do [[ -f "$f" ]] && upload "$f" "media/$(basename "$f")"; done
-          upload site/robots.txt robots.txt
+          while IFS= read -r -d '' f; do
+            upload "$f" "${f#site/}"
+          done < <(find site -type f ! -path site/index.html -print0)
           upload site/index.html index.html
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
           [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt"
