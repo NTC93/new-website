@@ -1,0 +1,64 @@
+name: Deploy NTC93 design preview
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ntc93-preview
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare local copies of verified club images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site/media
+          python3 - <<'PY'
+          import pathlib, subprocess
+          p = pathlib.Path('site/index.html')
+          s = p.read_text()
+          assets = {
+              'https://ntc93.com/wp-content/uploads/2023/06/Logo_ausgeschnitten_1-300x300.png': 'logo.png',
+              'https://ntc93.com/wp-content/uploads/2024/06/IMG_20240623_144051-1024x576.jpg': 'anlage.jpg',
+              'https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg': 'halle.jpg',
+              'https://ntc93.com/wp-content/uploads/2023/06/ekxepi7v-1024x576.png': 'verein.png',
+              'https://ntc93.com/wp-content/uploads/2024/06/IMG_20240623_143321-1024x576.jpg': 'terrasse.jpg',
+          }
+          for url, name in assets.items():
+              if url not in s: continue
+              subprocess.run(['curl','-fsSL','--retry','2','--max-time','60',url,'-o','site/media/'+name],check=True)
+              s = s.replace(url,'media/'+name)
+          p.write_text(s)
+          PY
+      - name: Verify isolated FTPS target and publish preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$FTP_SERVER" && -n "$FTP_USERNAME" && -n "$FTP_PASSWORD" ]]
+          [[ "$FTP_SERVER" =~ ^[a-zA-Z0-9.-]+(:[0-9]+)?$ ]]
+          upload() {
+            curl --fail --silent --show-error --ssl-reqd --ftp-create-dirs \
+              --connect-timeout 20 --max-time 120 --user "$FTP_USERNAME:$FTP_PASSWORD" \
+              --upload-file "$1" "ftp://$FTP_SERVER/$2"
+          }
+          probe="ntc93-preview-check-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          printf '%s' "$(openssl rand -hex 32)" > "$RUNNER_TEMP/probe.txt"
+          upload "$RUNNER_TEMP/probe.txt" "$probe"
+          status=$(curl --silent --show-error --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/received.txt" --write-out '%{http_code}' "https://neu.ntc93.de/$probe")
+          [[ "$status" == 200 ]] && cmp -s "$RUNNER_TEMP/probe.txt" "$RUNNER_TEMP/received.txt" || { echo 'FTPS directory not confirmed as neu.ntc93.de, or HTTP access protected. No website files uploaded.'; exit 1; }
+          for f in site/media/*; do [[ -f "$f" ]] && upload "$f" "media/$(basename "$f")"; done
+          upload site/robots.txt robots.txt
+          upload site/index.html index.html
+          status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
+          [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt"
+          echo 'Preview deployed and verified.'
