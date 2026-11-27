@@ -17,6 +17,35 @@
  document.title=row.title+' | NTC 93';const dateEl=make('p','article-date',date(row.publish_at));const title=make('h1','pagetitle',row.title);root.append(dateEl,title);const lead=make('p','cms-lead',row.data.teaser||'');if(row.data.teaser)root.append(lead);const photo=img(row.data.image,'cms-article-image',row.title);if(photo)root.append(photo);const body=make('div','content');paragraphs(body,row.data.body);root.append(body)}
  async function sponsors(){const box=$('.sponsor-grid')||$('.sponsor-track');if(!box)return;const list=await items('sponsors');for(const item of list){const image=img(item.data.image,'',item.title);if(!image)continue;if([...box.querySelectorAll('img')].some(x=>x.src===image.src))continue;const link=safe(item.data.link);const el=make(link?'a':'div','sponsor-logo');if(link)el.href=link;el.append(image);box.append(el)}}
  async function notices(){const list=await items('notices');if(!list.length)return;const main=$('main');if(!main)return;const box=make('section','cms-notices');box.setAttribute('aria-label','Aktuelle Hinweise');for(const item of list){const el=make('div','cms-notice');el.append(make('strong','',item.title),make('p','',item.data.body||''));const link=safe(item.data.link);if(link){const a=make('a','','Weitere Informationen ↗');a.href=link;el.append(a)}box.append(el)}main.prepend(box)}
- async function events(){const list=await items('events');if(!list.length)return;const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const upcoming=list.filter(x=>x.data.date>=today).sort((a,b)=>a.data.date.localeCompare(b.data.date));if(!upcoming.length)return;const main=$('main');if(!main)return;const section=make('section','cms-events');section.append(make('h2','','Kommende Vereinstermine'));for(const item of upcoming){const row=make('div','cms-event');const dt=make('div','cms-event-date',date(item.data.date));if(item.data.time)dt.append(make('small','',item.data.time+' Uhr'));const copy=make('div');copy.append(make('strong','',item.title));if(item.data.venue)copy.append(make('p','',item.data.venue));paragraphs(copy,item.data.body);const link=safe(item.data.link);if(link){const a=make('a','','Details ↗');a.href=link;copy.append(a)}row.append(dt,copy);section.append(row)}main.append(section)}
- if(path==='/'||path==='/news/')news();if(path==='/redaktion/')article();if(path==='/'||path==='/sponsoren/')sponsors();if(path==='/')notices();if(path==='/termine/')events();
+
+ async function events(){
+  const target=$('[data-club-events]');if(!target)return;
+  const compact=target.dataset.clubEvents==='compact';
+  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  // Remove expired fallback rows even when the CMS is temporarily unavailable.
+  target.querySelectorAll('[data-event-date]').forEach(x=>{if(x.dataset.eventDate<today)x.remove()});
+  try{
+   const response=await fetch('/admin/?public=events',{credentials:'omit',cache:'no-cache'});
+   if(!response.ok)throw Error('CMS unavailable');
+   const payload=await response.json();if(!Array.isArray(payload.items))throw Error('Invalid event list');
+   const upcoming=payload.items.filter(x=>x.data&&typeof x.data.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x.data.date)&&x.data.date>=today).sort((a,b)=>a.data.date.localeCompare(b.data.date)||String(a.data.time||'').localeCompare(String(b.data.time||'')));
+   target.replaceChildren();
+   for(const item of (compact?upcoming.slice(0,4):upcoming)){
+    const row=make('article','club-event');row.dataset.eventDate=item.data.date;
+    const d=new Date(item.data.date+'T12:00:00Z');
+    const dt=make('div','club-event-date');dt.append(make('strong','',item.data.date.slice(8)),make('span','',new Intl.DateTimeFormat('de-DE',{month:'short',year:'numeric',timeZone:'Europe/Berlin'}).format(d)));
+    const copy=make('div','club-event-copy');copy.append(make('h3','',item.title));
+    if(item.data.status&&item.data.status.toLowerCase()!=='bestätigt')copy.append(make('span','club-event-status',item.data.status));
+    const time=item.data.time?(item.data.time.includes('Uhr')?item.data.time:item.data.time+' Uhr'):'';
+    const meta=[time,item.data.venue].filter(Boolean).join(' · ');
+    if(meta)copy.append(make('p','club-event-meta',meta));
+    if(!compact)paragraphs(copy,item.data.body);
+    const link=safe(item.data.link);if(link){const linkEl=make('a','','Details →');linkEl.href=link;copy.append(linkEl)}
+    row.append(dt,copy);target.append(row)
+   }
+  }catch{}
+  if(!target.children.length)target.append(make('p','club-event-empty','Zurzeit sind keine weiteren Vereinstermine eingetragen.'));
+ }
+
+ if(path==='/'||path==='/news/')news();if(path==='/redaktion/')article();if(path==='/'||path==='/sponsoren/')sponsors();if(path==='/')notices();if(path==='/'||path==='/termine/')events();
 })();
