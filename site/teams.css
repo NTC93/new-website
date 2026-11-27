@@ -43,3 +43,8 @@
 .tp-empty{padding:16px;background:#f1f5f0;color:#526960}
 .tp-matchcenter{margin-top:42px;padding-top:22px;border-top:1px solid #ccdcd2}
 @media(max-width:600px){.tp-grid{grid-template-columns:1fr}.tp-card{padding:15px}.tp-select{flex:1 1 140px}.tp-metrics .tp-stat{min-width:90px;padding:12px}.tp-stat strong{font-size:21px}.tp-table{font-size:12px}.tp-table th,.tp-table td{padding:10px 8px}}
+
+.tp-promotion{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;border:1px solid #d5bb59;background:#fbf4d7;color:#235d42;font-weight:800;font-size:12px;line-height:1.35;padding:3px 8px;border-radius:4px;white-space:nowrap;letter-spacing:0}
+.tp-card-promotion{border-color:#bda148;border-top:3px solid #bda148;background:linear-gradient(180deg,#fcfaed 0,#fff 65%)}
+.tp-table .tp-own .tp-promotion{background:#fff5cb;color:#18583b}
+.tp-detail-header>.tp-promotion{margin-top:8px;font-size:14px;padding:5px 10px}
