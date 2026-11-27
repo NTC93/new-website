@@ -171,7 +171,7 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
-local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/'))
+local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/gastronomie/','/'))
 if len(local)<12: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
@@ -184,7 +184,7 @@ def rewrite(soup):
 rewrite(source)
 # Shared navigation: retain the original destinations, prefer migrated pages.
 def nav_target(label, fallback=''):
-    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/'):
+    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/','/gastronomie/'):
         return fallback
     wanted=' '.join(label.casefold().split())
     for a in home.select('li.menu-item a[href], nav a[href]')+home.select('a[href]'):
@@ -254,7 +254,7 @@ def build_nav(source):
             if count:d.append(sect)
         if d.contents:g.append(d);nav.append(g)
     group('Aktuelles',[('',[('Nachrichten','News','/news/'),('Termine','Termine','/termine/'),('NTC Tennis App','NTC Tennis App',''),('TVBB Spielergebnisse','TVBB Spielergebnisse','')])])
-    group('Verein',[('Über den NTC',[('Unser Verein','Über uns','/ueber-uns/'),('Vorstand','Vorstand','/vorstand/'),('Trainer','Trainer','/trainer/'),('Ehrenmitglieder','Ehrenmitglieder','/ehrenmitglieder/'),('Gastronomie','Gastronomie',''),('Anfahrt & Kontakt','Anfahrt','/anfahrt/')]),('Organisation & Partner',[('Sponsoren','Sponsoren','/sponsoren/'),('Sponsor werden','Sponsor werden','/sponsor-werden/'),('Satzung','Satzung',''),('NTC-Informationen','NTC-Informationen',''),('Platzordnung','Platzordnung',''),('Arbeitskarte','Arbeitskarte','')])],True)
+    group('Verein',[('Über den NTC',[('Unser Verein','Über uns','/ueber-uns/'),('Vorstand','Vorstand','/vorstand/'),('Trainer','Trainer','/trainer/'),('Ehrenmitglieder','Ehrenmitglieder','/ehrenmitglieder/'),('Gastronomie','Gastronomie','/gastronomie/'),('Anfahrt & Kontakt','Anfahrt','/anfahrt/')]),('Organisation & Partner',[('Sponsoren','Sponsoren','/sponsoren/'),('Sponsor werden','Sponsor werden','/sponsor-werden/'),('Satzung','Satzung',''),('NTC-Informationen','NTC-Informationen',''),('Platzordnung','Platzordnung',''),('Arbeitskarte','Arbeitskarte','')])],True)
     group('Teams',[('',[('Mannschaften im Überblick','Teams','/mannschaften/'),('Damen','Damen',''),('Herren','Herren',''),('Seniorinnen','Seniorinnen',''),('Senioren','Senioren',''),('Jugendteams','Jugendteams','')])])
     link('Matchcenter','/matchcenter/',nav)
     group('Jugend',[('Training',[('Jugend im Überblick','Jugend','/jugend/'),('Trainingskonzept','Trainingskonzept',''),('Teamsporttraining','Teamsporttraining',''),('Breitensporttraining','Breitensporttraining',''),('Minitennis','Minitennis',''),('Förderungskonzept','Förderungskonzept','')]),('Mannschaften',[('Jugendteams','Jugendteams',''),('Juniorinnen 15–18','Juniorinnen 15-18',''),('Junioren 15–18','Junioren 15-18',''),('Mixed Teams 10–12','Mixed Teams 10-12','')]),('Jugend-Angebote',[('Feriencamps','Feriencamps',''),('Turniere','Turniere',''),('Konditionstraining','Konditionstraining',''),('Workshops','Workshops',''),('Matchpraxis','Matchpraxis',''),('Jugend trainiert für Olympia','Jugend trainiert für Olympia',''),('Interne Rangliste','Interne Rangliste','')])],True)
@@ -377,6 +377,13 @@ cms_style=source.new_tag('link',attrs={'rel':'stylesheet','href':'/cms-public.cs
 source.head.append(cms_style)
 cms_script=source.new_tag('script',attrs={'src':'/cms-public.js','defer':''})
 source.head.append(cms_script)
+
+# Apply the same external-link rule to dynamic CMS and nuLiga content.
+EXTERNAL_JS="""(()=>{const internal=new Set([location.hostname,'ntc93.de','www.ntc93.de','neu.ntc93.de']);function fix(a){if(!a.matches('a[href]'))return;try{const u=new URL(a.getAttribute('href'),location.href);if(!['http:','https:'].includes(u.protocol))return;const external=!internal.has(u.hostname.toLowerCase());if(external){if(a.target!=='_blank')a.target='_blank';const rel=new Set(a.rel.split(/\\s+/).filter(Boolean));rel.add('noopener');rel.add('noreferrer');a.rel=[...rel].join(' ')}else if(a.target==='_blank'){a.removeAttribute('target')}}catch{}}function start(){document.querySelectorAll('a[href]').forEach(fix);new MutationObserver(records=>{for(const r of records){if(r.type==='attributes'){fix(r.target);continue}for(const n of r.addedNodes){if(n.nodeType!==1)continue;fix(n);n.querySelectorAll('a[href]').forEach(fix)}}}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['href']});document.addEventListener('click',e=>{const a=e.target.closest?.('a[href]');if(a)fix(a)},true)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start()})();"""
+external_script=source.new_tag('script')
+external_script.string=EXTERNAL_JS
+source.head.append(external_script)
+
 (ROOT/'index.html').write_text(str(source),encoding='utf-8')
 header=str(source.header);footer=str(source.footer)
 head=copy.deepcopy(source.head)
@@ -427,7 +434,7 @@ def link_button(label,target,secondary=False):
 def section_links(node, entries, url=BASE, pictures=False):
     tiles=[]
     for label,target,desc in entries:
-        target=matching_link(node,label) or target
+        target=target if target=='/gastronomie/' else matching_link(node,label) or target
         if not target: continue
         img=preceding_photo(node,label,url) if pictures else ''
         tiles.append('<a class="topic-link'+(' with-photo' if img else '')+'" href="'+E(href_for(target))+'">'+photo(img,'')+'<div class="topic-copy"><h3>'+E(label)+'</h3><p>'+E(desc)+'</p><span aria-hidden="true">→</span></div></a>')
@@ -519,7 +526,7 @@ def layout_detail(path,title,node,url,body,sidebar,original):
     if path in ('/ueber-uns/','/verein/'):
         top=masthead('Unser Verein','Neuenhagener TC 93','Tennis, Gemeinschaft und Vereinsleben seit 1993.','/media/anlage.jpg',link_button('Vorstand','/vorstand/')+link_button('Mitgliedschaft','/mitglieder/',True))
         stats=metrics([('1993','Gegründet'),('7','Sandplätze'),('2','Hallenplätze')])
-        links=section_links(node,[('Vorstand','/vorstand/','Ansprechpartner und Verantwortliche'),('Trainer','/trainer/','Training auf und neben dem Platz'),('Ehrenmitglieder','/ehrenmitglieder/','Engagement für unseren Verein'),('Tennishalle','/tennishalle/','Auch im Winter Tennis spielen'),('Sponsoring','/sponsoren/','Unsere Partner kennenlernen'),('Gastronomie','https://due-fratelli-neuenhagen.de/','Trattoria Due Fratelli auf der Anlage')],url)
+        links=section_links(node,[('Vorstand','/vorstand/','Ansprechpartner und Verantwortliche'),('Trainer','/trainer/','Training auf und neben dem Platz'),('Ehrenmitglieder','/ehrenmitglieder/','Engagement für unseren Verein'),('Tennishalle','/tennishalle/','Auch im Winter Tennis spielen'),('Sponsoring','/sponsoren/','Unsere Partner kennenlernen'),('Gastronomie','/gastronomie/','Trattoria Due Fratelli auf der Anlage')],url)
         main='<section class="detail-section"><h2>Ein Club, viele Möglichkeiten</h2><p>Auf unseren Sandplätzen und in der Tennishalle treffen sich Freizeit- und Mannschaftsspieler. Training, Turniere, Jugendarbeit und die gemeinsame Zeit auf der Anlage gehören zum Vereinsleben.</p>'+links+'</section>'
         return crumb+top+stats+main+'<section class="detail-section"><h2>Vereinsinformationen</h2>'+section_links(node,[('Satzung','/satzung/','Grundlagen unseres Vereins'),('NTC-Informationen',matching_link(home,'NTC-Informationen'),'Wissenswertes für Mitglieder'),('Platzordnung','/platzordnung/','Regeln auf der Anlage'),('Arbeitskarte',matching_link(home,'Arbeitskarte'),'Vereinsarbeit organisieren')],url)+'</section>'+original
     if path=='/mannschaften/':
@@ -645,8 +652,73 @@ h=copy.deepcopy(head);h.title.string='Anfahrt & Kontakt | NTC 93'
 out=ROOT/'anfahrt/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page arrival-page">'+arrival_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 
+# Gastronomy landing page: keep the restaurant's own website authoritative for
+# prices, reservations and exceptional opening hours. Use its existing photos.
+GASTRO='https://due-fratelli-neuenhagen.de/'
+def gastro_photo(filename):
+    url=GASTRO+'media/'+filename
+    rel='media/gastronomie/'+filename
+    target=ROOT/rel
+    try:
+        if not target.is_file():
+            with requests.get(url,timeout=(6,15),stream=True,headers=HEADERS) as response:
+                response.raise_for_status()
+                if urlsplit(response.url).hostname!='due-fratelli-neuenhagen.de':raise ValueError('unexpected host')
+                data=bytearray()
+                for chunk in response.iter_content(65536):
+                    data.extend(chunk)
+                    if len(data)>8*1024*1024:raise ValueError('image too large')
+                if not (data.startswith(b'\xff\xd8\xff') or (data[:4]==b'RIFF' and data[8:12]==b'WEBP')):raise ValueError('not an image')
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(data)
+        return '/'+rel
+    except Exception as exc:
+        print('::warning::Restaurant photo could not be copied:',filename)
+        return url
+room=gastro_photo('trattoria-gastraum.webp')
+terrace=gastro_photo('restaurant-abend.jpg')
+pizza=gastro_photo('gericht-pizza.jpg')
+entrance=gastro_photo('restaurant-aussen.jpg')
+gastro_css="""
+.gastro-page{max-width:1400px}.gastro-hero{display:grid;grid-template-columns:1fr 1.15fr;background:#f4f3ea;overflow:hidden;border-radius:4px;align-items:stretch;margin-bottom:32px}.gastro-hero-copy{padding:clamp(25px,4vw,54px);align-self:center}.gastro-hero h1{font-size:clamp(32px,4.2vw,55px);line-height:1.04;letter-spacing:-.04em;margin:12px 0 16px}.gastro-hero p{font-size:16px;line-height:1.65;color:var(--muted);max-width:490px;margin:0 0 22px}.gastro-hero>img{width:100%;height:100%;min-height:320px;max-height:460px;object-fit:cover}.gastro-actions{display:flex;flex-wrap:wrap;gap:10px}.gastro-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:24px 0 34px}.gastro-gallery figure{margin:0}.gastro-gallery img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:4px;display:block}.gastro-gallery figcaption{font-size:13px;font-weight:650;margin-top:8px;color:var(--muted)}.gastro-info{display:grid;grid-template-columns:1fr 1fr;gap:28px;border-top:1px solid var(--line);padding-top:24px}.gastro-info h2{font-size:23px;margin:0 0 14px;letter-spacing:-.025em}.gastro-hours{margin:0;padding:0}.gastro-hours div{display:flex;justify-content:space-between;gap:15px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}.gastro-hours dd{margin:0;font-weight:650}.gastro-info p,.gastro-info address{font-size:14px;line-height:1.65;font-style:normal}.gastro-info a:not(.detail-action){color:var(--green);font-weight:650}.gastro-note{color:var(--muted);font-size:12px!important}.gastro-info .detail-action{margin-top:7px}@media(max-width:720px){.gastro-hero{grid-template-columns:1fr}.gastro-hero>img{min-height:0;height:250px;max-height:none}.gastro-hero-copy{padding:24px}.gastro-hero p{font-size:14px}.gastro-gallery{gap:9px}.gastro-gallery figcaption{font-size:11px}.gastro-info{grid-template-columns:1fr;gap:25px}}
+"""
+gastro_content='<div class="breadcrumbs"><a href="/">Startseite</a> › Gastronomie</div>'
+gastro_content+='<div class="gastro-hero"><div class="gastro-hero-copy"><div class="detail-kicker">Unsere Gastronomie · Benvenuti</div><h1>Trattoria<br>Due Fratelli</h1><p>Ein Stück Italien auf unserer Tennisanlage. Ob nach dem Training, mit der Mannschaft oder für einen gemütlichen Abend mit Familie und Freunden – hier sind auch Gäste herzlich willkommen.</p><div class="gastro-actions">'+link_button('Speisekarte ansehen',GASTRO+'speisekarte/')+link_button('Tisch reservieren',GASTRO+'reservieren/',True)+'</div></div><img src="'+E(room)+'" alt="Gastraum der Trattoria Due Fratelli" decoding="async"></div>'
+gastro_content+='<section class="detail-section"><h2>Italienische Küche. Direkt am Platz.</h2><p>Steinofenpizza, Pasta und italienische Fisch- und Fleischgerichte – dazu eine gemütliche Terrasse mit Blick auf die Vereinsanlage. Ein Treffpunkt für Vereinsmitglieder und Gäste.</p><div class="gastro-gallery">'
+for url,alt in [(terrace,'Terrasse am Clubhaus'),(pizza,'Pizza aus der Küche'),(entrance,'Eingang zur Trattoria')]:
+    gastro_content+='<figure>'+photo(url,alt)+'<figcaption>'+E(alt)+'</figcaption></figure>'
+gastro_content+='</div></section><div class="gastro-info"><section><div class="detail-kicker">Öffnungszeiten</div><h2>Wir freuen uns auf euch</h2><dl class="gastro-hours"><div><dt>Montag</dt><dd>Ruhetag</dd></div><div><dt>Dienstag – Freitag</dt><dd>14–22 Uhr</dd></div><div><dt>Samstag – Sonntag</dt><dd>12–22 Uhr</dd></div></dl><p class="gastro-note">Abweichende Feiertagszeiten und aktuelle Angebote findet ihr auf der Restaurantwebsite.</p>'+link_button('Zur Restaurantwebsite',GASTRO)+'</section><section><div class="detail-kicker">Kontakt & Reservierung</div><h2>So erreicht ihr Due Fratelli</h2><address>Hildesheimer Straße 11–13<br>15366 Neuenhagen bei Berlin</address><p><a href="tel:+493342203823">03342 203823</a><br><a href="mailto:info@due-fratelli-neuenhagen.de">info@due-fratelli-neuenhagen.de</a></p><p><a href="/anfahrt/">Anfahrt zur Vereinsanlage →</a></p>'+link_button('Online reservieren',GASTRO+'reservieren/')+'</section></div>'
+h=copy.deepcopy(head);h.title.string='Gastronomie – Trattoria Due Fratelli | NTC 93'
+h.style.append(gastro_css)
+out=ROOT/'gastronomie/index.html';out.parent.mkdir(parents=True,exist_ok=True)
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page gastro-page">'+gastro_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
 migration=localize(ROOT)
+
+# Static links receive the policy too, so it works even with JavaScript disabled.
+# Navigation to the club restaurant goes through the new local landing page.
+for file in ROOT.rglob('*.html'):
+    soup=BeautifulSoup(file.read_text(encoding='utf-8'),'html.parser')
+    for a in soup.select('a[href]'):
+        try:
+            u=urlsplit(a['href'])
+            host=(u.hostname or '').lower()
+        except ValueError:continue
+        if host=='due-fratelli-neuenhagen.de' and u.path in ('','/') and not u.query and not u.fragment:
+            if file!=ROOT/'gastronomie/index.html' or a.find_parent('footer') or a.find_parent('header'):
+                a['href']='/gastronomie/'
+                a.attrs.pop('target',None)
+                continue
+        if host and u.scheme in ('','http','https') and host not in ('ntc93.de','www.ntc93.de','neu.ntc93.de'):
+            a['target']='_blank'
+            rel=a.get('rel',[])
+            if isinstance(rel,str):rel=rel.split()
+            a['rel']=list(dict.fromkeys([*rel,'noopener','noreferrer']))
+        elif not host or host in ('ntc93.de','www.ntc93.de','neu.ntc93.de'):
+            a.attrs.pop('target',None)
+    file.write_text(str(soup),encoding='utf-8')
+
 archive_report['discovered']=len(NEWS)
 archive_report['imported']=sum(1 for p,_,_ in NEWS if p in local)
 archive_report['failed']=[p for p,_,_ in NEWS if p not in local]
