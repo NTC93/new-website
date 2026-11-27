@@ -4,6 +4,9 @@ from urllib.parse import urljoin, urlsplit, unquote
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import copy, re, requests, html, json
+from datetime import datetime
+from archive_import import discover
+from localize import localize
 
 BASE = 'https://ntc93.com/'
 HOSTS = {'ntc93.com','www.ntc93.com'}
@@ -51,6 +54,7 @@ for a in home.select('footer a[href], .site-footer a[href]'):
     if ' '.join(a.stripped_strings).lower() in ('impressum','datenschutz'): add(a)
 for path,title in {'/news/':'Aktuelles','/termine/':'Termine','/verein/':'Verein','/ueber-uns/':'Über uns','/vorstand/':'Vorstand','/mannschaften/':'Teams','/mitglieder/':'Mitglied werden','/jugend/':'Jugend','/impressum/':'Impressum','/datenschutz/':'Datenschutz'}.items(): pages.setdefault(path,title)
 # Current news linked from front page (archive pagination is a later migration task).
+menu_paths=set(pages)
 front_news = []
 for a in home.select('a[href]'):
     p = route(a['href'])
@@ -63,8 +67,19 @@ for p in ['/damen-ii-mit-starkem-remis-herren-30-souveraen/','/grosse-ehre-fuer-
 
 # Explicitly verified recent article URLs also serve as fallback.
 NEWS = [["/damen-ii-mit-starkem-remis-herren-30-souveraen/","Damen II mit starkem Remis, Herren 30 souverän","19.11.2026"],["/grosse-ehre-fuer-gabi-faika/","Große Ehre für Gabi Faika","15.11.2026"],["/erster-aufschlag-fuer-die-wintersaison/","Erster Aufschlag für die Wintersaison","09.11.2026"],["/gemeinsam-fuer-unseren-neuen-kinderspielplatz-jetzt-abstimmen/","Gemeinsam für unseren neuen Kinderspielplatz: Jetzt abstimmen!","04.11.2026"],["/das-fazit-faellt-positiv-aus/","„Das Fazit fällt positiv aus“","22.10.2026"],["/clubmeisterschaften-ntc-nachwuchs-im-wettkampffieber/","NTC-Nachwuchs im Wettkampffieber",""],["/33-jahre-ntc-und-ein-brunch-zum-anstossen/","33 Jahre NTC – und ein Brunch zum Anstoßen",""],["/19-jahre-fuer-die-1-herren-danke-benny/","19 Jahre für die 1. Herren: Danke, Benny!",""],["/u10-midcourt-matchpraxis-startet-in-die-wintersaison/","U10-Midcourt: Matchpraxis startet in die Wintersaison",""],["/damen-65-einladungsturnier-eine-tradition-die-verbindet/","Damen 65: Einladungsturnier mit Tradition",""]]
-for p,title,date in NEWS:
-    pages[p]=title
+# Discover the full public archive, not just the first ten hardcoded headlines.
+discovered, archive_report=discover(home,route,menu_paths)
+news_index={p:(t,d) for p,t,d in NEWS}
+for p in front_news:news_index.setdefault(p,('',''))
+for p,(t,d) in discovered.items():
+    if d and re.fullmatch(r'\d{4}-\d{2}-\d{2}',d):
+        d=datetime.strptime(d,'%Y-%m-%d').strftime('%d.%m.%Y')
+    old_title,old_date=news_index.get(p,('',''))
+    news_index[p]=(t or old_title,d or old_date)
+NEWS=[(p,t,d) for p,(t,d) in news_index.items()]
+for p,title,date in NEWS:pages[p]=title
+print('Archive discovered:',len(NEWS),'posts;',archive_report)
+
 # Prefer the actual content area; do not copy WP theme, navigation or scripts.
 def extract(soup):
     for selector in ('main .entry-content','main .elementor[data-elementor-type="wp-page"]','main .elementor[data-elementor-type="wp-post"]','.entry-content','[data-elementor-type="wp-page"]','[data-elementor-type="wp-post"]','main','#content'):
@@ -109,6 +124,7 @@ def sanitize(node, url, local):
     return ''.join(str(x) for x in node.contents)
 
 postmeta = {}
+news_paths=set(news_index)
 def load(item):
     path,label=item
     try:
@@ -118,7 +134,7 @@ def load(item):
         title=soup.select_one('main h1, .entry-title, h1')
         actual=' '.join(title.stripped_strings) if title else ''
         title=label or actual or (soup.title.get_text(strip=True).split(' – ')[0] if soup.title else path.strip('/'))
-        if path in {p for p,_,_ in NEWS}:
+        if path in news_paths:
             meta=soup.select_one('meta[property="article:published_time"], meta[itemprop="datePublished"]')
             date=''
             if meta and meta.get('content'):
@@ -144,7 +160,7 @@ def load(item):
                 desc=soup.select_one('meta[name="description"],meta[property="og:description"]')
                 teaser=desc.get('content','') if desc else ''
             if len(teaser)>145: teaser=teaser[:145].rsplit(' ',1)[0]+' …'
-            postmeta[path]=(date,image,teaser)
+            postmeta[path]=(date or news_index[path][1],image,teaser)
         return path,(title,node,url,None)
     except Exception as e:
         return path,(label or path.strip('/'),None,urljoin(BASE,path),str(e))
@@ -155,8 +171,8 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
-local.add('/news/')
-if len(local)<8: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
+local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/'))
+if len(local)<12: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
     for a in soup.select('a[href]'):
@@ -329,7 +345,7 @@ def sponsor_tiles():
     return ''.join(result)
 def sponsor_band():
     logos=sponsor_tiles()
-    return '<section class="sponsor-band" aria-labelledby="sponsor-title"><div class="sponsor-head"><div><div class="section-kicker">Gemeinsam für den NTC</div><h2 id="sponsor-title">Unsere Sponsoren & Partner</h2></div><a class="sponsor-link" href="/sponsoren/">Alle Sponsoren →</a></div>'+('<div class="sponsor-track">'+logos+'</div>' if logos else '<p>Unsere Partner unterstützen das Vereinsleben. <a href="https://ntc93.com/">Sponsoren auf der bisherigen Vereinswebsite ansehen →</a></p>')+'</section>'
+    return '<section class="sponsor-band" aria-labelledby="sponsor-title"><div class="sponsor-head"><div><div class="section-kicker">Gemeinsam für den NTC</div><h2 id="sponsor-title">Unsere Sponsoren & Partner</h2></div><a class="sponsor-link" href="/sponsoren/">Alle Sponsoren →</a></div>'+('<div class="sponsor-track">'+logos+'</div>' if logos else '<p>Wir danken allen Partnern für ihre Unterstützung.</p>')+'</section>'
 SPONSOR_CSS="""
 .sponsor-band{max-width:1320px;margin:0 auto;padding:24px clamp(20px,5vw,68px) 42px}.sponsor-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:16px}.sponsor-head h2{font-size:clamp(21px,2.4vw,29px);margin:5px 0;color:#183c2b;letter-spacing:-.03em}.sponsor-link{font-weight:650;color:#146143;font-size:13px;white-space:nowrap}.sponsor-track{display:flex;gap:12px;overflow-x:auto;padding:4px 1px 12px;scroll-snap-type:x proximity}.sponsor-logo{flex:0 0 150px;min-width:0;min-height:88px;background:white;border:1px solid #e1e9e2;border-radius:9px;display:grid;place-items:center;padding:15px;scroll-snap-align:start}.sponsor-logo img{width:100%;height:62px;object-fit:contain}.sponsor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:26px 0 35px}.sponsor-grid .sponsor-logo{min-height:120px}.sponsor-grid .sponsor-logo img{height:83px}@media(max-width:540px){.sponsor-logo{flex-basis:125px;min-height:75px;padding:12px}.sponsor-logo img{height:50px}.sponsor-head{align-items:flex-start;flex-direction:column;gap:4px}}
 """
@@ -350,6 +366,7 @@ head.style.append("\n.news-page{max-width:1320px;margin:auto;padding:28px clamp(
 head.style.append("\n/* Consistent club editorial styling on compact content and news pages. */\n.subpage,.news-page{max-width:1350px;padding-left:clamp(20px,4vw,64px);padding-right:clamp(20px,4vw,64px)}\n.breadcrumbs{font-size:12px;color:#596b66;margin:0 0 17px}.pagetitle{font-size:clamp(30px,3.8vw,46px);letter-spacing:-.045em;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:28px;position:relative}.pagetitle:after{content:'';position:absolute;bottom:-1px;left:0;width:58px;height:4px;background:var(--green)}.content h2{color:var(--deep);font-weight:730}.content h3{color:var(--deep)}.section-nav{border-top:4px solid var(--green);background:#eeeee5;padding:17px 18px}.section-nav h2{color:var(--deep);font-size:11px;letter-spacing:.13em}.section-nav a{line-height:1.45;font-weight:550;font-size:13px}.section-nav a:last-child{border:0}.content th{background:#e2ebe2}.content img{max-height:380px}.source-note{font-size:12px}\n.news-heading{position:relative;overflow:hidden;background:var(--deep);color:#fff;margin:0 0 18px;padding:23px 26px;border:0;align-items:flex-end}.news-heading:after{content:'';position:absolute;right:32%;top:-85px;width:180px;height:260px;transform:rotate(-15deg);border:1px solid #ffffff15;background:linear-gradient(90deg,transparent 49.5%,#ffffff15 49.5% 50.5%,transparent 50.5%);pointer-events:none}.news-heading>div,.news-search{position:relative;z-index:1}.news-kicker{color:var(--yellow);font-size:10px}.news-heading h1{font-size:clamp(28px,3.2vw,40px);margin:7px 0 4px;line-height:1.1}.news-heading p{color:#d5e4dc;font-size:13px}.news-search{font-size:11px;color:#e4ede8;min-width:220px}.news-search input{border-radius:0;border:1px solid #ffffff60;background:#ffffff0e;color:#fff;padding:9px 11px}.news-search input::placeholder{color:#c6d9d3}.archive-grid{gap:0 34px}.archive-item{grid-template-columns:112px minmax(0,1fr);gap:14px;padding:15px 0;align-items:start}.archive-img{width:112px;aspect-ratio:4/3;object-fit:cover;border-radius:0}.archive-placeholder{background:var(--deep);color:var(--yellow);font-weight:800}.archive-item h2{font-size:16px;line-height:1.28;margin:0 0 5px}.archive-item time{color:#526a61;font-size:11px;font-weight:650;margin-bottom:3px}.archive-item p{font-size:12px;line-height:1.45}.archive-read{margin-top:5px;font-size:11px}.archive-bottom{padding:18px 0}.archive-item:hover .archive-img{filter:saturate(1.13)}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr}.archive-item{grid-template-columns:105px minmax(0,1fr)}.archive-img{width:105px}}\n@media(max-width:560px){.news-heading{padding:18px;gap:14px}.news-search{min-width:0}.archive-item{grid-template-columns:90px minmax(0,1fr);gap:12px}.archive-img{width:90px}.archive-item h2{font-size:15px}.archive-item p{font-size:12px}}\n")
 head.style.append("\n/* Carry the new graphic identity into the interior without oversized headlines. */\n.subpage,.news-page{max-width:1800px;padding-left:var(--gutter);padding-right:var(--gutter)}\n.pagetitle{border-bottom:1px solid var(--ink);font-size:clamp(29px,3.2vw,43px);padding-bottom:17px}\n.pagetitle:after{width:48px;height:4px;background:var(--yellow)}\n.section-nav{background:transparent;border-top:1px solid var(--ink);padding:13px 0}\n.section-nav h2{color:var(--green)}.section-nav a{font-size:14px}\n.news-heading{background:transparent;color:var(--ink);border-bottom:1px solid var(--ink);padding:0 0 20px;align-items:flex-end;margin-bottom:0}\n.news-heading:after{display:none}.news-kicker{color:var(--green)}\n.news-heading h1{font-size:clamp(30px,3.5vw,43px);font-weight:780}.news-heading p{color:var(--muted)}\n.news-search{color:var(--ink);font-size:12px}.news-search input{border:1px solid var(--ink);background:transparent;color:var(--ink);padding:9px 11px}.news-search input::placeholder{color:var(--muted)}\n.archive-grid{gap:0 32px}.archive-item{padding:18px 0;grid-template-columns:104px minmax(0,1fr);gap:14px}.archive-img{width:104px}.archive-item h2{font-size:16px}.archive-item time{color:var(--green)}.archive-read{color:var(--green)}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr}}\n@media(max-width:560px){.news-heading{padding:0 0 16px}.archive-item{grid-template-columns:88px minmax(0,1fr);gap:12px;padding:14px 0}.archive-img{width:88px}.archive-item h2{font-size:15px}}\n")
 head.style.append("\n/* Individual club pages: photography and service content instead of imported theme blocks. */\n.detail-page{max-width:1400px;padding-top:24px;padding-bottom:64px}.detail-page .breadcrumbs{margin-bottom:20px;display:flex;align-items:center;gap:8px}.detail-mast{background:#edf4ee;display:grid;grid-template-columns:1fr;align-items:stretch;margin-bottom:30px;border-left:4px solid var(--green);overflow:hidden}.detail-mast.has-photo{grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);min-height:220px}.detail-mast-copy{padding:clamp(23px,3vw,39px);display:flex;flex-direction:column;justify-content:center;align-items:flex-start}.detail-kicker{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;font-weight:750;color:var(--green);line-height:1.4;margin-bottom:10px}.detail-kicker:before{content:'';height:3px;width:19px;background:var(--yellow)}.detail-mast h1,.article-heading h1{font-size:clamp(29px,3.8vw,48px);font-weight:770;letter-spacing:-.043em;line-height:1.12;margin:0;color:var(--ink)}.detail-mast p{font-size:15px;line-height:1.55;color:#466058;max-width:510px;margin:12px 0 0}.detail-photo{width:100%;height:100%;min-height:225px;max-height:300px;object-fit:cover;display:block}.detail-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}.detail-action{background:var(--green);color:white;padding:10px 14px;display:inline-flex;align-items:center;gap:13px;font-size:13px;font-weight:700;border-radius:4px;border:1px solid var(--green);line-height:1.35}.detail-action:hover{background:#074846}.detail-action.outline{color:var(--green);background:transparent}.detail-action.outline:hover{background:#dcece3}.detail-action span{font-size:16px}.detail-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid var(--line);margin:0 0 32px;padding:0 0 24px}.detail-metrics>div{padding:0 24px;border-right:1px solid var(--line)}.detail-metrics>div:first-child{padding-left:0}.detail-metrics>div:last-child{border:0}.detail-metrics strong{font-size:clamp(25px,3.6vw,43px);line-height:1.15;display:block;font-weight:800;letter-spacing:-.04em;color:var(--green)}.detail-metrics span{display:block;color:var(--muted);font-size:12px;margin-top:5px}.detail-section{margin:0 0 32px}.detail-section h2,.people-section h2{font-size:clamp(23px,2.4vw,31px);line-height:1.22;letter-spacing:-.035em;color:var(--ink);margin:0 0 15px}.detail-section>p{max-width:770px;font-size:15px;line-height:1.65;color:var(--muted);margin:0 0 20px}.topic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 25px}.topic-link{min-width:0;display:grid;grid-template-columns:1fr;border-bottom:1px solid var(--line);padding:17px 0;color:var(--ink);transition:color .15s,background .15s}.topic-link.with-photo{grid-template-columns:minmax(120px,38%) minmax(0,1fr);align-items:stretch;padding:0;background:#f3f6f2;border-bottom:0}.topic-link.with-photo img{width:100%;height:100%;min-height:112px;max-height:145px;object-fit:cover}.topic-copy{position:relative;padding-right:24px}.with-photo .topic-copy{padding:15px 30px 15px 17px}.topic-copy h3{margin:0 0 5px;font-size:17px;line-height:1.3;letter-spacing:-.015em}.topic-copy p{margin:0;font-size:13px;color:var(--muted);line-height:1.45}.topic-copy span{position:absolute;right:3px;top:2px;color:var(--green);font-size:20px}.with-photo .topic-copy span{right:11px;top:13px}.topic-link:hover{color:var(--green)}.topic-link.with-photo:hover{background:#e5eee6}.detail-textlink{display:inline-block;color:var(--green);font-size:13px;font-weight:700;margin:14px 0 0;text-decoration:underline;text-underline-offset:4px}.detail-note{margin-top:22px!important;font-size:13px!important}.detail-split{display:grid;grid-template-columns:1.2fr 1fr;gap:35px;align-items:start}.detail-split p{color:var(--muted);font-size:15px}.detail-callout{padding:21px 23px;background:#edf4ee;border-top:3px solid var(--green)}.detail-callout h3{font-size:19px;margin:0 0 6px}.detail-callout p{font-size:14px;margin:0 0 14px}.membership-notice{margin:0 0 27px;background:#fbf6df;border-left:4px solid #e3c039;padding:20px 24px}.membership-notice .detail-kicker{color:#655300;margin-bottom:8px}.membership-notice h2{margin:0 0 9px;font-size:23px;line-height:1.2}.membership-notice p{margin:0;font-size:15px;max-width:750px;color:#514b32}.people-section{margin-bottom:32px}.people-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 25px}.person{display:grid;grid-template-columns:84px minmax(0,1fr);align-items:center;gap:15px;min-height:115px;padding:12px 0;border-bottom:1px solid var(--line)}.person img,.person-placeholder{width:84px;height:100px;object-fit:cover;object-position:center 25%;display:block;border-radius:3px;background:#e7efe7}.person-placeholder{display:grid;place-items:center;color:var(--green);font-weight:750}.person h3{font-size:16px;line-height:1.25;margin:0 0 5px;letter-spacing:-.01em}.person p,.person a{margin:0;display:block;font-size:12px;line-height:1.5;overflow-wrap:anywhere;color:var(--muted)}.person a{color:var(--green);text-decoration:underline}.team-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 28px}.team-panel{min-width:0;padding:0 0 20px;border-bottom:1px solid var(--line)}.team-panel h2{font-size:23px;letter-spacing:-.03em;margin:0 0 12px;color:var(--deep)}.team-panel img{width:100%;height:auto;max-height:300px;object-fit:contain;display:block;background:#f5f7f3}.team-panel p{font-size:14px}.article-heading{max-width:930px;margin:0 auto 28px}.article-heading .detail-textlink{margin:0 0 15px}.article-date{color:var(--green);font-size:12px;font-weight:650;margin:0 0 9px}.article-reading{max-width:930px;margin:auto}.article-reading .content{font-size:16px;line-height:1.75}.article-reading .post-back,.article-reading .post-date{display:none}.detail-page .subgrid{gap:clamp(28px,5vw,70px)}.detail-page .subgrid.solo{grid-template-columns:minmax(0,880px)}.detail-page .content h2{font-size:clamp(22px,2.2vw,29px);margin:28px 0 12px}.detail-page .content h2:first-child{margin-top:0}.detail-page .content h3{font-size:20px}.detail-page .content img.editorial-image{border-radius:3px;max-height:370px}.detail-page .section-nav{border-top:3px solid var(--green);background:#f1f5ef;padding:18px}.detail-page .section-nav h2{font-size:11px}.detail-page .section-nav a{font-size:13px;gap:8px}.detail-page .source-note{margin-top:30px}.download-link{display:inline-block;padding:8px 12px;background:#edf4ee;font-size:13px;font-weight:650;border-left:3px solid var(--green);text-decoration:none!important}.download-link:before{content:'↓ ';font-weight:800}.detail-page .content table{font-size:14px}.detail-page .content th{background:#e3ede4}.detail-page .content tbody tr:nth-child(even){background:#f5f8f4}\n@media(max-width:1000px){.people-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@media(max-width:720px){.detail-page{padding-top:18px;padding-bottom:40px}.detail-mast{margin-bottom:24px}.detail-mast.has-photo{grid-template-columns:1fr;min-height:0}.detail-mast-copy{padding:22px}.detail-photo{height:200px;min-height:0;max-height:220px}.detail-mast h1,.article-heading h1{font-size:32px}.detail-mast p{font-size:14px}.detail-metrics{padding-bottom:18px;margin-bottom:25px}.detail-metrics>div{padding:0 12px}.detail-metrics span{font-size:11px}.topic-grid,.detail-split,.team-panels{grid-template-columns:1fr;gap:15px}.topic-link.with-photo{grid-template-columns:125px minmax(0,1fr)}.topic-link.with-photo img{min-height:102px;height:100%;max-height:125px}.people-grid{gap:10px;grid-template-columns:1fr}.person{min-height:100px}.person img,.person-placeholder{width:74px;height:87px}.person{grid-template-columns:74px 1fr}.membership-notice{padding:17px 19px}.membership-notice h2{font-size:21px}.detail-page .section-nav{margin-top:0}.article-heading{margin-bottom:23px}.article-reading .content{font-size:15px}}\n")
+head.style.append(".archive-controls{display:flex;align-items:end;gap:12px}.archive-controls select{font:inherit;padding:9px 10px;border:1px solid var(--ink);background:white;color:var(--ink)}.archive-controls label:last-child{min-width:105px}#newsMore[hidden]{display:none}@media(max-width:600px){.archive-controls{flex-wrap:wrap}.archive-controls label:first-child{flex:1;min-width:160px}}")
 for link in head.select('link[href]'):
     if link['href'].startswith('media/'): link['href']='/'+link['href']
 menu_js="""const menu=document.querySelector('.menu'),nav=document.querySelector('#nav');menu.onclick=()=>{const open=nav.classList.toggle('open');menu.setAttribute('aria-expanded',String(open))};document.addEventListener('keydown',e=>{if(e.key==='Escape'){nav.classList.remove('open');menu.setAttribute('aria-expanded','false')}});"""+NAV_JS
@@ -529,8 +546,7 @@ for path,(title,node,url,err) in loaded.items():
         sidebar=''
         date=postmeta[path][0] or next((d for p,t,d in NEWS if p==path),'')
         body='<a class="post-back" href="/news/">← Zur Nachrichtenübersicht</a>' + ('<p class="post-date">'+html.escape(date)+'</p>' if date else '') + body
-    original='<div class="source-note">Inhaltsübernahme aus der bisherigen Vereinswebsite. <a href="'+html.escape(url,quote=True)+'">Originalseite ansehen</a></div>'
-    if path=='/termine/': original='<p><a class="textlink" href="'+html.escape(url,quote=True)+'">Aktuellen Kalender auf der bisherigen Website öffnen →</a></p>'+original
+    original=''
     h=copy.deepcopy(head);h.title.string=title+' | NTC 93'
     page_content=layout_detail(path,title,node,url,body,sidebar,original)
     markup='<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+page_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>'
@@ -539,16 +555,21 @@ for path,(title,node,url,err) in loaded.items():
 # The old page renders desktop and mobile archives in parallel. Use one curated, deduplicated index.
 def esc(value): return html.escape(str(value),quote=True)
 items=[]
-for path,title,fallback_date in NEWS:
+def date_key(row):
+    d=postmeta.get(row[0],('','',''))[0] or row[2]
+    try:return datetime.strptime(d,'%d.%m.%Y')
+    except (ValueError,TypeError):return datetime.min
+for path,title,fallback_date in sorted(NEWS,key=date_key,reverse=True):
     if path not in local: continue
+    title=loaded[path][0]
     date,image,teaser=postmeta.get(path,('','',''))
     date=date or fallback_date
-    target=path if path in local else urljoin(BASE,path)
+    target=path
     thumb=('<img class="archive-img" src="'+esc(image)+'" alt="" loading="lazy" decoding="async">') if image else '<span class="archive-img archive-placeholder" aria-hidden="true">NTC</span>'
     items.append('<a class="archive-item" href="'+esc(target)+'">'+thumb+'<div>'+('<time>'+esc(date)+'</time>' if date else '')+'<h2>'+esc(title)+'</h2>'+('<p>'+esc(teaser)+'</p>' if teaser else '')+'<span class="archive-read">Weiterlesen →</span></div></a>')
 h=copy.deepcopy(head);h.title.string='Aktuelles | NTC 93'
-filter_js="""const search=document.querySelector('#newsSearch'),items=[...document.querySelectorAll('.archive-item')],count=document.querySelector('#newsCount'),empty=document.querySelector('#newsEmpty');search.addEventListener('input',()=>{let n=0;const q=search.value.toLocaleLowerCase('de').trim();for(const item of items){item.hidden=!item.textContent.toLocaleLowerCase('de').includes(q);if(!item.hidden)n++}count.textContent=n+' von '+items.length+' Meldungen';empty.hidden=n!==0});"""
-news_markup='<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="news-page"><div class="breadcrumbs"><a href="/">Startseite</a> / Aktuelles</div><div class="news-heading"><div><div class="news-kicker">Vereinsleben &amp; Sport</div><h1>Aktuelles</h1><p>Nachrichten und Berichte rund um den NTC 93.</p></div><label class="news-search" for="newsSearch">Meldungen durchsuchen<input id="newsSearch" type="search" placeholder="Suchbegriff eingeben …"></label></div><div class="archive-grid">'+''.join(items)+'</div><p id="newsEmpty" class="archive-empty" hidden>Keine passenden Meldungen gefunden.</p><div class="archive-bottom"><span id="newsCount" class="archive-count" aria-live="polite">'+str(len(items))+' aktuelle Meldungen</span><a class="textlink" href="https://ntc93.com/news/">Ältere Beiträge im bisherigen Archiv →</a></div></main>'+footer+'<script>'+menu_js+filter_js+'</script></body></html>'
+filter_js="""(()=>{const search=document.querySelector('#newsSearch'),year=document.querySelector('#newsYear'),count=document.querySelector('#newsCount'),empty=document.querySelector('#newsEmpty'),more=document.querySelector('#newsMore'),grid=document.querySelector('.archive-grid');let limit=24;function refreshYears(){const current=year.value;const years=[...new Set([...grid.children].map(x=>(x.querySelector('time')?.textContent||'').match(/\\d{4}$/)?.[0]).filter(Boolean))].sort().reverse();year.replaceChildren(new Option('Alle Jahre',''),...years.map(y=>new Option(y,y)));if(years.includes(current))year.value=current}function render(){const q=search.value.toLocaleLowerCase('de').trim(),y=year.value;let found=0,visible=0;for(const item of grid.children){const match=item.textContent.toLocaleLowerCase('de').includes(q)&&(!y||(item.querySelector('time')?.textContent||'').endsWith(y));if(match)found++;item.hidden=!match||found>limit;if(!item.hidden)visible++}count.textContent=visible+' von '+found+' Meldungen';empty.hidden=found!==0;more.hidden=visible>=found}search.addEventListener('input',()=>{limit=24;render()});year.addEventListener('change',()=>{limit=24;render()});more.addEventListener('click',()=>{limit+=24;render()});document.addEventListener('ntc-news-updated',()=>{refreshYears();render()});refreshYears();render()})();"""
+news_markup='<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="news-page"><div class="breadcrumbs"><a href="/">Startseite</a> / Aktuelles</div><div class="news-heading"><div><div class="news-kicker">Vereinsleben &amp; Sport</div><h1>Aktuelles</h1><p>Nachrichten und Berichte rund um den NTC 93.</p></div><div class="archive-controls"><label class="news-search" for="newsSearch">Meldungen durchsuchen<input id="newsSearch" type="search" placeholder="Suchbegriff eingeben …"></label><label class="news-search" for="newsYear">Jahr<select id="newsYear"><option value="">Alle Jahre</option></select></label></div></div><div class="archive-grid">'+''.join(items)+'</div><p id="newsEmpty" class="archive-empty" hidden>Keine passenden Meldungen gefunden.</p><div class="archive-bottom"><span id="newsCount" class="archive-count" aria-live="polite">'+str(len(items))+' Meldungen im Archiv</span><button class="detail-action" id="newsMore" type="button" hidden>Weitere Meldungen laden ↓</button></div></main>'+footer+'<script>'+menu_js+filter_js+'</script></body></html>'
 out=ROOT/'news/index.html';out.parent.mkdir(parents=True,exist_ok=True);out.write_text(news_markup,encoding='utf-8')
 
 
@@ -560,13 +581,22 @@ out=ROOT/'matchcenter/index.html';out.parent.mkdir(parents=True,exist_ok=True);o
 
 # Dedicated sponsor page using the shared design.
 h=copy.deepcopy(head);h.title.string='Sponsoren & Partner | NTC 93'
-sponsor_content='<div class="breadcrumbs"><a href="/">Startseite</a> / Sponsoren</div><h1 class="pagetitle">Sponsoren & Partner</h1><p>Vielen Dank an unsere Partner für ihre Unterstützung des Neuenhagener Tennisclub 93 e. V.</p>'+('<div class="sponsor-grid">'+sponsor_tiles()+'</div>' if SPONSORS else '<p><a href="https://ntc93.com/">Zur bisherigen Sponsorenübersicht →</a></p>')+'<a class="detail-action" href="'+html.escape(nav_target('Sponsor werden','/sponsor-werden/'),quote=True)+'">Sponsor werden ↗</a>'
+sponsor_content='<div class="breadcrumbs"><a href="/">Startseite</a> / Sponsoren</div><h1 class="pagetitle">Sponsoren & Partner</h1><p>Vielen Dank an unsere Partner für ihre Unterstützung des Neuenhagener Tennisclub 93 e. V.</p>'+('<div class="sponsor-grid">'+sponsor_tiles()+'</div>' if SPONSORS else '<p>Die Sponsorenübersicht wird ergänzt.</p>')+'<a class="detail-action" href="'+html.escape(nav_target('Sponsor werden','/sponsor-werden/'),quote=True)+'">Sponsor werden ↗</a>'
 out=ROOT/'sponsoren/index.html';out.parent.mkdir(parents=True,exist_ok=True);out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+sponsor_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 
 # Dynamic article shell for CMS news, independent of static legacy articles.
 h=copy.deepcopy(head);h.title.string='Nachricht | NTC 93'
 out=ROOT/'redaktion/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page"><div class="breadcrumbs"><a href="/">Startseite</a> / <a href="/news/">Aktuelles</a></div><article id="cms-article" class="cms-article"><p>Nachricht wird geladen …</p></article></main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
-report={'sponsor_count':len(SPONSORS),'imported':sorted(local),'skipped':{p:err for p,(_,_,_,err) in loaded.items() if err}}
+# Resolve internal routes and copy all linked legacy media after every page has been rendered.
+migration=localize(ROOT)
+archive_report['discovered']=len(NEWS)
+archive_report['imported']=sum(1 for p,_,_ in NEWS if p in local)
+archive_report['failed']=[p for p,_,_ in NEWS if p not in local]
+report={'sponsor_count':len(SPONSORS),'archive':archive_report,'media_and_links':migration,'imported':sorted(local),'skipped':{p:re.sub(r'https?://[^\s]+','[URL]',err) for p,(_,_,_,err) in loaded.items() if err}}
+if archive_report['expected'] and archive_report['imported']<archive_report['expected']:
+    print('::warning::Archive incomplete: '+str(archive_report['imported'])+' imported, at least '+str(archive_report['expected'])+' indicated by source')
+print('Legacy asset/link migration:',migration['assets_downloaded'],'files;',len(migration['missing_assets']),'missing assets;',len(migration['unresolved_links']),'unresolved references')
+
 (ROOT/'migration-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 print('Imported',len(local),'pages:',', '.join(sorted(local)))
