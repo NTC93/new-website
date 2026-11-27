@@ -87,6 +87,74 @@ def extract(soup):
         if candidate and (candidate.get_text(strip=True) or candidate.find('img')): return copy.deepcopy(candidate)
     return None
 
+
+# Recover real WordPress/Elementor images from lazy-load attributes and srcsets.
+def valid_photo_url(value,base):
+    if not isinstance(value,str) or not value.strip():return ''
+    value=value.strip()
+    if value.startswith(('data:','blob:','javascript:','#')):return ''
+    u=urljoin(base,value)
+    p=urlsplit(u)
+    if p.scheme not in ('http','https') or not p.hostname:return ''
+    if re.search(r'(?:placeholder|blank\.gif|spacer\.gif|transparent\.png|loading\.gif|dummy-image)',p.path,re.I):return ''
+    if not re.search(r'\.(?:jpe?g|png|webp|gif|avif)(?:$|/)',p.path,re.I):return ''
+    return u
+def photo_key(url):
+    p=urlsplit(url)
+    return (p.hostname or '',re.sub(r'-(?:\d+x\d+)(?=\.[^.]+$)','',unquote(p.path)).casefold())
+def actual_image(im,base):
+    if not im:return ''
+    choices=[]
+    for attr in ('data-srcset','data-lazy-srcset','srcset'):
+        for item in (im.get(attr) or '').split(','):
+            parts=item.strip().split()
+            if not parts:continue
+            u=valid_photo_url(parts[0],base)
+            if u:
+                size=re.match(r'(\d+)w$',parts[-1])
+                choices.append((int(size.group(1)) if size else 0,u))
+    if choices:
+        suitable=[x for x in choices if 900<=x[0]<=1800]
+        if suitable:return max(suitable)[1]
+        return max(choices)[1]
+    for attr in ('data-large-file','data-full-url','data-src','data-lazy-src','data-original','data-lazy','src'):
+        u=valid_photo_url(im.get(attr),base)
+        if u:return u
+    return ''
+def article_extra_photos(soup,node,base):
+    out=[];seen=set()
+    def add(src,alt=''):
+        u=valid_photo_url(src,base)
+        if not u:return
+        key=photo_key(u)
+        if key in seen:return
+        seen.add(key);out.append((u,str(alt or '')))
+    # Images embedded as background gallery tiles, slide images or link-only lightboxes.
+    for el in node.find_all(True):
+        if el.name=='img':add(actual_image(el,base),el.get('alt',''))
+        elif el.name=='a' and (el.has_attr('data-elementor-open-lightbox') or el.find('img') or 'gallery' in ' '.join(el.get('class',[]))):
+            add(el.get('href'),el.get('aria-label',''))
+        for attr in ('data-bg','data-background','data-background-image','data-src'):
+            if el.name!='img':add(el.get(attr),el.get('aria-label',''))
+        classes=' '.join(el.get('class',[]))
+        if re.search(r'gallery|carousel|swiper|slide|image',classes,re.I):
+            for m in re.finditer(r'url\(\s*["\']?([^)"\']+)',el.get('style','')):
+                add(m.group(1),el.get('aria-label',''))
+        settings=el.get('data-settings')
+        if not settings:continue
+        if not re.search(r'gallery|carousel|slides',classes+' '+el.get('data-widget_type',''),re.I):continue
+        try:
+            def walk(obj):
+                if isinstance(obj,dict):
+                    for k,v in obj.items():
+                        if k in ('url','image_url') and isinstance(v,str):add(v,obj.get('alt',''))
+                        elif isinstance(v,(dict,list)):walk(v)
+                elif isinstance(obj,list):
+                    for v in obj:walk(v)
+            walk(json.loads(settings))
+        except (ValueError,TypeError):pass
+    return out
+
 allowed = set('div section article p h1 h2 h3 h4 h5 h6 ul ol li dl dt dd table thead tbody tfoot tr th td a img figure figcaption blockquote strong b em i u s small sup sub br hr span time address details summary'.split())
 def sanitize(node, url, local):
     for tag in node.select('script,style,noscript,iframe,object,embed,form,input,button,select,textarea,svg,video,audio,link,meta,nav,header,footer,.elementor-location-header,.elementor-location-footer,.elementor-hidden-desktop.elementor-hidden-tablet.elementor-hidden-mobile'):
@@ -109,7 +177,7 @@ def sanitize(node, url, local):
                     if p in local and fragment: attrs['href']+='#'+fragment
                     if urlsplit(full).hostname not in HOSTS: attrs['rel']='noopener noreferrer'
         if tag.name=='img':
-            src=tag.get('data-src') or tag.get('data-lazy-src') or tag.get('src','')
+            src=actual_image(tag,url) or tag.get('data-src') or tag.get('data-lazy-src') or tag.get('src','')
             full=urljoin(url,src)
             if not src or urlsplit(full).scheme not in ('http','https'):
                 tag.decompose(); continue
@@ -124,6 +192,7 @@ def sanitize(node, url, local):
     return ''.join(str(x) for x in node.contents)
 
 postmeta = {}
+postphotos={}
 news_paths=set(news_index)
 def load(item):
     path,label=item
@@ -147,13 +216,16 @@ def load(item):
             if not date:
                 m=re.search(r'\b\d{1,2}\.\d{1,2}\.\d{4}\b',node.get_text(' ',strip=True))
                 if m: date=m.group()
-            image=soup.select_one('meta[property="og:image"]')
-            image=image.get('content','') if image else ''
+            photos=article_extra_photos(soup,node,url)
+            # Featured images often live outside the WordPress article content.
+            featured=soup.select_one('main .elementor-widget-theme-post-featured-image img, main img.wp-post-image, article img.wp-post-image, .post-thumbnail img, .featured-image img')
+            image=actual_image(featured,url)
             if not image:
-                im=node.select_one('img')
-                image=(im.get('data-src') or im.get('src','')) if im else ''
-            image=urljoin(url,image) if image else ''
-            if urlsplit(image).scheme not in ('http','https'): image=''
+                meta=soup.select_one('meta[property="og:image"], meta[name="twitter:image"]')
+                image=valid_photo_url(meta.get('content',''),url) if meta else ''
+            if image and re.search(r'logo|favicon|platzhalter|placeholder',urlsplit(image).path,re.I):image=''
+            if not image and photos:image=photos[0][0]
+            postphotos[path]=photos
             paras=[' '.join(p.stripped_strings) for p in node.select('p')]
             teaser=next((p for p in paras if len(p)>65),'')
             if not teaser:
@@ -388,6 +460,10 @@ source.head.append(external_script)
 header=str(source.header);footer=str(source.footer)
 head=copy.deepcopy(source.head)
 head.style.append(css)
+head.style.append("\n/* Editorial article photography: responsive, undistorted originals and restrained gallery spacing. */\n.article-heading,.article-reading{max-width:980px;margin-left:auto;margin-right:auto}.article-heading{margin-bottom:20px}.article-heading h1{max-width:920px;font-size:clamp(29px,3.8vw,48px);line-height:1.13}.article-featured{margin:0 0 30px;background:#f3f6f2;border-radius:5px;overflow:hidden;display:flex;justify-content:center;align-items:center}.article-featured img{display:block;width:auto;max-width:100%;height:auto;max-height:570px;object-fit:contain;margin:0}.article-reading .article-content{max-width:820px;margin:auto;font-size:16px;line-height:1.75}.article-reading .article-content .article-figure{display:block;margin:25px 0;background:none;text-align:center}.article-reading .article-content img.article-inline-photo{width:auto;max-width:100%;height:auto;max-height:510px;object-fit:contain;display:block;margin:0 auto;border-radius:4px}.article-reading .article-content .article-figure figcaption{font-size:12px;color:var(--muted);margin:7px auto 0;line-height:1.4}.article-gallery-section{margin:34px 0 0;padding-top:20px;border-top:1px solid var(--line)}.article-gallery-section h2{font-size:23px;margin:0 0 16px}.article-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px;align-items:start}.article-gallery-photo{margin:0;min-width:0;background:#f3f6f2;border-radius:4px;overflow:hidden}.article-gallery-photo img{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block}.article-featured:empty,.article-figure:empty,.article-gallery-photo:empty{display:none}.article-lightbox-link{display:block;cursor:zoom-in}.article-lightbox-link:focus-visible{outline:2px solid var(--green);outline-offset:3px}.article-lightbox{padding:0;border:0;background:#102521;border-radius:7px;max-width:96vw;max-height:94dvh;color:#fff;overflow:auto}.article-lightbox::backdrop{background:#071612d9}.article-lightbox img{display:block;max-width:94vw;max-height:85dvh;object-fit:contain}.article-lightbox button{display:block;margin:9px 12px 9px auto;padding:7px 12px;border:1px solid #ffffff70;background:#ffffff14;color:white;border-radius:4px;cursor:pointer;font-size:13px}.cms-article .cms-article-image{margin:18px auto 28px;width:auto;max-width:100%;height:auto;max-height:570px;border-radius:4px;object-fit:contain;display:block}.article-reading .article-content p:empty{display:none}@media(max-width:600px){.article-featured{margin-bottom:22px}.article-featured img{max-height:430px}.article-reading .article-content{font-size:15px}.article-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.article-gallery-photo img{aspect-ratio:1/1}.article-lightbox img{max-width:96vw}}\n")
+article_script=source.new_tag('script')
+article_script.string="(()=>{const selector='.article-featured img,.article-content img.article-inline-photo,.article-gallery img,.cms-article-image';function enhance(img){if(img.closest('.article-lightbox-link')||img.closest('a'))return;const src=img.currentSrc||img.src;if(!src)return;const a=document.createElement('a');a.className='article-lightbox-link';a.href=src;a.setAttribute('aria-label','Foto vergrößern');img.replaceWith(a);a.append(img);a.addEventListener('click',e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||!HTMLDialogElement.prototype.showModal)return;e.preventDefault();const d=document.createElement('dialog');d.className='article-lightbox';d.setAttribute('aria-label','Fotoansicht');const close=document.createElement('button');close.type='button';close.textContent='Schließen ×';const photo=document.createElement('img');photo.src=img.currentSrc||img.src;photo.alt=img.alt||'';d.append(close,photo);document.body.append(d);close.onclick=()=>d.close();d.addEventListener('click',ev=>{if(ev.target===d)d.close()});d.addEventListener('close',()=>{d.remove();a.focus()},{once:true});d.showModal();close.focus()})}function scan(){document.querySelectorAll(selector).forEach(enhance)}function start(){scan();const root=document.querySelector('#cms-article');if(root)new MutationObserver(scan).observe(root,{childList:true,subtree:true})}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start()})();"
+head.append(article_script)
 head.style.append("\n.news-page{max-width:1320px;margin:auto;padding:28px clamp(20px,5vw,68px) 64px;min-height:65vh}.news-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:24px;border-bottom:1px solid var(--line)}.news-heading h1{font-size:clamp(31px,4vw,47px);line-height:1.1;letter-spacing:-.045em;margin:8px 0}.news-heading p{margin:0;color:#586962;font-size:14px}.news-kicker{display:flex;gap:8px;align-items:center;font-size:11px;letter-spacing:.13em;font-weight:700;color:var(--green);text-transform:uppercase}.news-kicker:before{content:'';display:block;width:20px;height:3px;background:var(--yellow)}.news-search{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;min-width:230px}.news-search input{font:inherit;font-weight:400;font-size:14px;padding:10px 12px;background:white;border:1px solid #cbd9d1;border-radius:5px;width:100%;color:var(--ink)}.archive-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px}.archive-item{display:grid;grid-template-columns:126px minmax(0,1fr);gap:15px;padding:19px 0;border-bottom:1px solid var(--line);align-items:start;min-width:0}.archive-item[hidden]{display:none}.archive-img{width:126px;aspect-ratio:4/3;object-fit:cover;border-radius:4px;display:block;background:#e1e9e3}.archive-placeholder{display:grid;place-items:center;color:var(--green);font-weight:750;font-size:16px;letter-spacing:.06em;background:linear-gradient(135deg,#dcece3,#f1f3eb)}.archive-item time{color:#60746a;font-size:11px;display:block;letter-spacing:.025em;margin-bottom:5px}.archive-item h2{font-size:17px;line-height:1.3;letter-spacing:-.018em;margin:0 0 6px;font-weight:700;overflow-wrap:anywhere}.archive-item p{margin:0;font-size:13px;line-height:1.45;color:#52635d;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.archive-read{display:inline-block;font-size:11px;font-weight:700;color:var(--green);margin-top:7px}.archive-item:hover h2{color:var(--green)}.archive-bottom{display:flex;align-items:center;justify-content:space-between;padding-top:23px;gap:15px}.archive-count{font-size:12px;color:#60746a}.archive-empty{padding:24px 0;font-size:14px}.post-date{font-size:12px;color:#60746a;margin:-12px 0 25px}.post-back{display:inline-block;margin:0 0 22px;font-size:13px;color:var(--green);font-weight:650}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr;gap:0}.archive-item{grid-template-columns:110px minmax(0,1fr);gap:14px}.archive-img{width:110px}}\n@media(max-width:560px){.news-heading{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:16px}.news-page{padding-top:20px;padding-bottom:40px}.archive-item{grid-template-columns:94px minmax(0,1fr);gap:12px;padding:15px 0}.archive-img{width:94px}.archive-item h2{font-size:15px}.archive-item p{font-size:12px}.archive-bottom{align-items:flex-start;flex-direction:column}}\n")
 head.style.append("\n/* Consistent club editorial styling on compact content and news pages. */\n.subpage,.news-page{max-width:1350px;padding-left:clamp(20px,4vw,64px);padding-right:clamp(20px,4vw,64px)}\n.breadcrumbs{font-size:12px;color:#596b66;margin:0 0 17px}.pagetitle{font-size:clamp(30px,3.8vw,46px);letter-spacing:-.045em;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:28px;position:relative}.pagetitle:after{content:'';position:absolute;bottom:-1px;left:0;width:58px;height:4px;background:var(--green)}.content h2{color:var(--deep);font-weight:730}.content h3{color:var(--deep)}.section-nav{border-top:4px solid var(--green);background:#eeeee5;padding:17px 18px}.section-nav h2{color:var(--deep);font-size:11px;letter-spacing:.13em}.section-nav a{line-height:1.45;font-weight:550;font-size:13px}.section-nav a:last-child{border:0}.content th{background:#e2ebe2}.content img{max-height:380px}.source-note{font-size:12px}\n.news-heading{position:relative;overflow:hidden;background:var(--deep);color:#fff;margin:0 0 18px;padding:23px 26px;border:0;align-items:flex-end}.news-heading:after{content:'';position:absolute;right:32%;top:-85px;width:180px;height:260px;transform:rotate(-15deg);border:1px solid #ffffff15;background:linear-gradient(90deg,transparent 49.5%,#ffffff15 49.5% 50.5%,transparent 50.5%);pointer-events:none}.news-heading>div,.news-search{position:relative;z-index:1}.news-kicker{color:var(--yellow);font-size:10px}.news-heading h1{font-size:clamp(28px,3.2vw,40px);margin:7px 0 4px;line-height:1.1}.news-heading p{color:#d5e4dc;font-size:13px}.news-search{font-size:11px;color:#e4ede8;min-width:220px}.news-search input{border-radius:0;border:1px solid #ffffff60;background:#ffffff0e;color:#fff;padding:9px 11px}.news-search input::placeholder{color:#c6d9d3}.archive-grid{gap:0 34px}.archive-item{grid-template-columns:112px minmax(0,1fr);gap:14px;padding:15px 0;align-items:start}.archive-img{width:112px;aspect-ratio:4/3;object-fit:cover;border-radius:0}.archive-placeholder{background:var(--deep);color:var(--yellow);font-weight:800}.archive-item h2{font-size:16px;line-height:1.28;margin:0 0 5px}.archive-item time{color:#526a61;font-size:11px;font-weight:650;margin-bottom:3px}.archive-item p{font-size:12px;line-height:1.45}.archive-read{margin-top:5px;font-size:11px}.archive-bottom{padding:18px 0}.archive-item:hover .archive-img{filter:saturate(1.13)}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr}.archive-item{grid-template-columns:105px minmax(0,1fr)}.archive-img{width:105px}}\n@media(max-width:560px){.news-heading{padding:18px;gap:14px}.news-search{min-width:0}.archive-item{grid-template-columns:90px minmax(0,1fr);gap:12px}.archive-img{width:90px}.archive-item h2{font-size:15px}.archive-item p{font-size:12px}}\n")
 head.style.append("\n/* Carry the new graphic identity into the interior without oversized headlines. */\n.subpage,.news-page{max-width:1800px;padding-left:var(--gutter);padding-right:var(--gutter)}\n.pagetitle{border-bottom:1px solid var(--ink);font-size:clamp(29px,3.2vw,43px);padding-bottom:17px}\n.pagetitle:after{width:48px;height:4px;background:var(--yellow)}\n.section-nav{background:transparent;border-top:1px solid var(--ink);padding:13px 0}\n.section-nav h2{color:var(--green)}.section-nav a{font-size:14px}\n.news-heading{background:transparent;color:var(--ink);border-bottom:1px solid var(--ink);padding:0 0 20px;align-items:flex-end;margin-bottom:0}\n.news-heading:after{display:none}.news-kicker{color:var(--green)}\n.news-heading h1{font-size:clamp(30px,3.5vw,43px);font-weight:780}.news-heading p{color:var(--muted)}\n.news-search{color:var(--ink);font-size:12px}.news-search input{border:1px solid var(--ink);background:transparent;color:var(--ink);padding:9px 11px}.news-search input::placeholder{color:var(--muted)}\n.archive-grid{gap:0 32px}.archive-item{padding:18px 0;grid-template-columns:104px minmax(0,1fr);gap:14px}.archive-img{width:104px}.archive-item h2{font-size:16px}.archive-item time{color:var(--green)}.archive-read{color:var(--green)}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr}}\n@media(max-width:560px){.news-heading{padding:0 0 16px}.archive-item{grid-template-columns:88px minmax(0,1fr);gap:12px;padding:14px 0}.archive-img{width:88px}.archive-item h2{font-size:15px}}\n")
@@ -513,6 +589,46 @@ def team_panels(clean):
                     fragments.append(str(nxt))
         blocks.append('<section class="team-panel"><h2>'+E(name)+'</h2>'+''.join(fragments)+'<a class="detail-textlink" href="/matchcenter/">Spielplan &amp; Ergebnisse im Matchcenter →</a></section>')
     return '<div class="team-panels">'+''.join(blocks)+'</div>'
+
+def news_picture_layout(clean,featured,photos,title):
+    # Keep one instance of each photo and retain the original reading order.
+    seen=set()
+    lead_alt=''
+    for im in list(clean.find_all('img')):
+        src=im.get('src','')
+        if not src:continue
+        key=photo_key(src)
+        if featured and key==photo_key(featured):
+            if not lead_alt:lead_alt=im.get('alt','')
+            # Keep captions in the text, but avoid the same photo twice.
+            if im.parent.name=='a' and not im.parent.get_text(strip=True):im.parent.decompose()
+            else:im.decompose()
+            continue
+        if key in seen:
+            if im.parent.name=='a' and not im.parent.get_text(strip=True):im.parent.decompose()
+            else:im.decompose()
+            continue
+        seen.add(key)
+        im['class']=['article-inline-photo']
+        im['loading']='lazy';im['decoding']='async'
+        if im.parent.name=='a' and not im.parent.get_text(strip=True):
+            old=im.parent;old.insert_before(im.extract());old.decompose()
+        if im.find_parent('figure') is None:
+            f=clean.new_tag('figure',attrs={'class':'article-figure'})
+            im.wrap(f)
+        else:
+            f=im.find_parent('figure');f['class']=list(dict.fromkeys(f.get('class',[])+['article-figure']))
+    # Gallery-only Elementor widgets may have no <img> in their rendered body.
+    additional=[]
+    for src,alt in photos:
+        key=photo_key(src)
+        if key in seen or featured and key==photo_key(featured):continue
+        seen.add(key)
+        additional.append('<figure class="article-gallery-photo">'+photo(src,alt,'article-inline-photo')+'</figure>')
+    gallery=('<section class="article-gallery-section"><h2>Weitere Bilder</h2><div class="article-gallery">'+''.join(additional)+'</div></section>') if additional else ''
+    lead=('<figure class="article-featured"><img src="'+E(featured)+'" alt="'+E(lead_alt)+'" fetchpriority="high" decoding="async"></figure>') if featured else ''
+    return lead,str(clean),gallery
+
 def layout_detail(path,title,node,url,body,sidebar,original):
     clean=article_body(body,title)
     area=title
@@ -558,7 +674,8 @@ def layout_detail(path,title,node,url,body,sidebar,original):
     if path in postmeta:
         date,img,_=postmeta[path]
         top='<div class="article-heading"><a class="detail-textlink" href="/news/">← Alle Nachrichten</a>'+('<p class="article-date">'+E(date)+'</p>' if date else '')+'<h1>'+E(title)+'</h1></div>'
-        return crumb+top+'<div class="article-reading"><article class="content">'+str(clean)+original+'</article></div>'
+        lead,article,gallery=news_picture_layout(clean,img,postphotos.get(path,[]),title)
+        return crumb+top+'<div class="article-reading">'+lead+'<article class="content article-content">'+article+original+'</article>'+gallery+'</div>'
     # Information and service pages have a quiet title and readable content, not a generic giant hero.
     top=masthead(title,area if area.casefold()!=title.casefold() else 'Neuenhagener TC 93')
     return crumb+top+'<div class="subgrid'+('' if sidebar else ' solo')+'"><article class="content">'+str(clean)+original+'</article>'+sidebar+'</div>'
