@@ -14,7 +14,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       FTP_SERVER: ${{ secrets.FTP_SERVER }}
       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -63,7 +63,7 @@ jobs:
           python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
       - name: Restore downloaded public media
         if: github.event_name != 'schedule'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: site/media/import
           key: ntc-public-media-${{ github.run_id }}
@@ -71,6 +71,12 @@ jobs:
       - name: Build public subpages
         if: github.event_name != 'schedule'
         run: python3 tools/import_pages.py
+      - name: Save downloaded media independently of deployment
+        if: github.event_name != 'schedule'
+        uses: actions/cache/save@v4
+        with:
+          path: site/media/import
+          key: ntc-public-media-${{ github.run_id }}
       - name: Save archive migration report
         if: github.event_name != 'schedule'
         uses: actions/upload-artifact@v4
@@ -78,7 +84,7 @@ jobs:
           name: migration-report
           path: site/migration-report.json
       - name: Verify isolated FTPS target and publish preview
-        timeout-minutes: 30
+        timeout-minutes: 45
         env:
           CMS_DB_HOST: ${{ secrets.CMS_DB_HOST }}
           CMS_DB_NAME: ${{ secrets.CMS_DB_NAME }}
@@ -109,57 +115,9 @@ jobs:
           fi
           # Protect the private directory first, even on a new installation.
           upload site/admin/private/.htaccess admin/private/.htaccess
-          # Compare content hashes from the last successful deployment. This
-          # manifest contains public website file hashes only, never secrets.
-          curl --fail --silent --show-error --max-time 25 \
-            "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID" \
-            -o "$RUNNER_TEMP/previous-manifest.json" || rm -f "$RUNNER_TEMP/previous-manifest.json"
-          # Invalidate the previous manifest before any files are changed.
-          # A failed or interrupted deployment will therefore be retried in full.
-          printf '%s' '{}' > "$RUNNER_TEMP/invalid-manifest.json"
-          upload "$RUNNER_TEMP/invalid-manifest.json" ntc-deploy-manifest.json
-          python3 -u - <<'PY'
-          import hashlib, json, os, pathlib, subprocess
-          from urllib.parse import quote
-          root=pathlib.Path('site')
-          tmp=pathlib.Path(os.environ['RUNNER_TEMP'])
-          try:
-              old=json.loads((tmp/'previous-manifest.json').read_text())
-              if not isinstance(old,dict): old={}
-          except (OSError,ValueError):
-              old={}
-          files={}
-          for p in sorted(root.rglob('*')):
-              if not p.is_file(): continue
-              rel=p.relative_to(root).as_posix()
-              if rel in ('index.html','migration-report.json','matches.json','ntc-deploy-manifest.json') or rel.startswith('admin/private/'):
-                  continue
-              files[rel]=hashlib.sha256(p.read_bytes()).hexdigest()
-          changed=[p for p,h in files.items() if old.get(p)!=h]
-          print(f'Upload plan: {len(changed)} changed files; {len(files)-len(changed)} unchanged; {len(files)} total',flush=True)
-          # A curl invocation can reuse FTPS connections between transfers.
-          # Use small batches and modest parallelism to avoid overloading shared hosting.
-          credentials=os.environ['FTP_USERNAME']+':'+os.environ['FTP_PASSWORD']
-          server=os.environ['FTP_SERVER']
-          for offset in range(0,len(changed),30):
-              batch=changed[offset:offset+30]
-              args=['curl','--parallel','--parallel-max','3','--fail-early']
-              for i,rel in enumerate(batch):
-                  if i: args.append('--next')
-                  args.extend(['--fail','--silent','--show-error','--ssl-reqd','--ftp-create-dirs',
-                               '--connect-timeout','20','--max-time','90',
-                               '--user',credentials,'--upload-file',str(root/rel),
-                               'ftp://'+server+'/'+quote(rel,safe='/')])
-              result=subprocess.run(args)
-              if result.returncode:
-                  raise SystemExit('FTPS batch failed; deployment manifest remains invalid')
-              print(f'Uploaded {offset+len(batch)}/{len(changed)} changed files',flush=True)
-          (tmp/'next-manifest.json').write_text(json.dumps(files,separators=(',',':')))
-          PY
-          # Match data is updated independently of the website manifest.
-          if [[ -f site/matches.json ]]; then
-            upload site/matches.json matches.json
-          fi
+          # Provision the administration application before the large public-site upload.
+          upload site/admin/admin.css admin/admin.css
+          upload site/admin/index.php admin/index.php
           if [[ -n "$CMS_DB_NAME" && -n "$CMS_DB_USER" && -n "$CMS_DB_PASSWORD" && ${#CMS_SETUP_TOKEN} -ge 32 ]]; then
             # Verify Apache blocks the private config directory before provisioning credentials.
             upload site/admin/private/.htaccess admin/private/.htaccess
@@ -172,6 +130,84 @@ jobs:
             rm -f "$RUNNER_TEMP/cms-config.php"
           else
             echo 'CMS database secrets not yet configured; leaving any existing local configuration untouched.'
+          fi
+          # Resume verified transfers using a checkpoint saved after each batch.
+          curl --fail --silent --show-error --max-time 25 \
+            "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID&attempt=$GITHUB_RUN_ATTEMPT" \
+            -o "$RUNNER_TEMP/previous-manifest.json" || rm -f "$RUNNER_TEMP/previous-manifest.json"
+          python3 -u - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, time
+          from urllib.parse import quote
+          root=pathlib.Path('site')
+          tmp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          credentials=os.environ['FTP_USERNAME']+':'+os.environ['FTP_PASSWORD']
+          server=os.environ['FTP_SERVER']
+          try:
+              old=json.loads((tmp/'previous-manifest.json').read_text())
+              if not isinstance(old,dict):old={}
+          except (OSError,ValueError):
+              old={}
+          files={}
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():continue
+              rel=p.relative_to(root).as_posix()
+              if rel in ('index.html','migration-report.json','matches.json','ntc-deploy-manifest.json') or rel.startswith('admin/private/'):
+                  continue
+              files[rel]=hashlib.sha256(p.read_bytes()).hexdigest()
+          # A hash is retained only for an unchanged file or a confirmed transfer.
+          confirmed={p:h for p,h in files.items() if old.get(p)==h}
+          changed=[p for p in files if p not in confirmed]
+          print(f'Upload plan: {len(changed)} changed files; {len(confirmed)} unchanged; {len(files)} total',flush=True)
+          def transfer_args(local,remote,method='singlecwd'):
+              return ['--fail','--silent','--show-error','--ssl-reqd','--ftp-create-dirs',
+                      '--ftp-method',method,'--connect-timeout','20','--max-time','90',
+                      '--user',credentials,'--upload-file',str(local),
+                      'ftp://'+server+'/'+quote(remote,safe='/')]
+          def checkpoint():
+              p=tmp/'next-manifest.json'
+              p.write_text(json.dumps(confirmed,separators=(',',':')))
+              subprocess.run(['curl']+transfer_args(p,'ntc-deploy-manifest.json'),check=True)
+          # Drop stale hashes before modifying files, including on interrupted runs.
+          checkpoint()
+          def one(rel):
+              for method in ('singlecwd','multicwd','singlecwd'):
+                  result=subprocess.run(['curl']+transfer_args(root/rel,rel,method))
+                  if result.returncode==0:
+                      confirmed[rel]=files[rel]
+                      return True
+                  print(f'Retrying {rel}: curl exit {result.returncode} ({method})',flush=True)
+                  time.sleep(2)
+              return False
+          # Parallel transfers may be rejected by shared hosting. Retry failed
+          # batches individually and keep confirmed progress.
+          failures=[]
+          for offset in range(0,len(changed),30):
+              batch=changed[offset:offset+30]
+              args=['curl','--parallel','--parallel-max','2','--fail-early']
+              for i,rel in enumerate(batch):
+                  if i:args.append('--next')
+                  args.extend(transfer_args(root/rel,rel))
+                  args.extend(['--write-out',rel.replace('%','%%')+' : %{exitcode}\n'])
+              result=subprocess.run(args,capture_output=True,text=True)
+              for line in result.stdout.splitlines():
+                  if ' : ' not in line:continue
+                  rel,code=line.rsplit(' : ',1)
+                  if rel in batch and code=='0':confirmed[rel]=files[rel]
+              if result.returncode:
+                  print('Parallel transfer rejected; retrying only unfinished files:',flush=True)
+              for rel in batch:
+                  if rel not in confirmed and not one(rel):failures.append(rel)
+              checkpoint()
+              print(f'Confirmed {len(confirmed)}/{len(files)} files',flush=True)
+              if failures:
+                  print('Persistent FTPS failures: '+', '.join(failures),flush=True)
+                  raise SystemExit('Upload interrupted; confirmed files retained for next run')
+          if len(confirmed)!=len(files):raise SystemExit('Incomplete deployment')
+          (tmp/'next-manifest.json').write_text(json.dumps(files,separators=(',',':')))
+          PY
+          # Match data is updated independently of the website manifest.
+          if [[ -f site/matches.json ]]; then
+            upload site/matches.json matches.json
           fi
           upload site/index.html index.html
           # Verify the news page was uploaded, not just the homepage.
