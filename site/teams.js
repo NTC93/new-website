@@ -15,6 +15,19 @@
  function select(label,values,value,change){const wrap=el('label','tp-select');wrap.append(el('span','',label));const s=el('select');for(const v of values){const option=el('option','',v.label??v.value);option.value=v.value;s.append(option)}s.value=value;s.addEventListener('change',()=>change(s.value));wrap.append(s);return wrap}
  function metric(label,value){const d=el('div','tp-stat');d.append(el('strong','',value??'–'),el('span','',label));return d}
  function promotion(status){if(!['promoted','position'].includes(status))return null;const mark=el('span','tp-promotion',status==='promoted'?'↑ Aufsteiger':'↑ Aufstiegsplatz');mark.title='Kennzeichnung nach nuLiga';return mark}
+ function relegation(status){if(!['relegated','position'].includes(status))return null;const mark=el('span','tp-relegation',status==='relegated'?'↓ Absteiger':'↓ Abstiegsplatz');mark.title='Kennzeichnung nach nuLiga';return mark}
+ function rankArrow(r){
+  const up=['promoted','position'].includes(r.promotion_status),down=['relegated','position'].includes(r.relegation_status);
+  const mark=el('span','tp-rank-arrow'+(up?' up':down?' down':''));
+  if(!up&&!down){mark.setAttribute('aria-hidden','true');return mark}
+  const description=up?(r.promotion_status==='promoted'?'Aufsteiger':'Aufstiegsplatz'):(r.relegation_status==='relegated'?'Absteiger':'Abstiegsplatz');
+  mark.title=description;mark.setAttribute('role','img');mark.setAttribute('aria-label',description);
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');
+  const arrow=document.createElementNS('http://www.w3.org/2000/svg','path');
+  arrow.setAttribute('d',up?'M12 2 22 12H16V22H8V12H2Z':'M12 22 22 12H16V2H8V12H2Z');
+  svg.append(arrow);mark.append(svg);return mark
+ }
  function table(t){
   const section=el('section','tp-section');section.append(el('h2','','Gruppentabelle'),el('p','tp-muted',t.group));
   if(!t.table.length){section.append(el('p','tp-empty','Gruppentabelle momentan nicht verfügbar.'),link('Tabelle bei nuLiga öffnen ↗',t.group_url));return section}
@@ -23,8 +36,8 @@
   const tab=el('table','tp-table'),head=el('thead'),hr=el('tr');
   for(const [,label] of cols){const th=el('th','',label);th.scope='col';hr.append(th)}
   head.append(hr);tab.append(head);const tbody=el('tbody');
-  for(const r of t.table){const tr=el('tr',r.own?'tp-own':r.club?'tp-other-club':'');for(const [k] of cols){const td=el(k==='name'?'th':'td','',r[k]??'–');if(k==='name'){td.scope='row';const mark=promotion(r.promotion_status);if(mark)td.append(document.createTextNode(' '),mark)}tr.append(td)}tbody.append(tr)}
-  tab.append(tbody);scroll.append(tab);section.append(scroll,el('p','tp-legend','B = Begegnungen · S = Siege · U = Unentschieden · N = Niederlagen. Die ausgewählte NTC-Mannschaft ist hervorgehoben.'));
+  for(const r of t.table){const tr=el('tr',r.own?'tp-own':r.club?'tp-other-club':'');for(const [k] of cols){const td=el(k==='name'?'th':'td','',r[k]??'–');if(k==='name')td.scope='row';if(k==='rank'){td.classList.add('tp-rank-cell');const wrap=el('span','tp-rank');wrap.append(rankArrow(r),el('span','tp-rank-number',r.rank??'–'));td.replaceChildren(wrap)}tr.append(td)}tbody.append(tr)}
+  tab.append(tbody);scroll.append(tab);section.append(scroll,el('p','tp-legend','B = Begegnungen · S = Siege · U = Unentschieden · N = Niederlagen. Goldener Pfeil: Aufstieg / Aufstiegsplatz. Roter Pfeil: Abstieg / Abstiegsplatz. Die ausgewählte NTC-Mannschaft ist hervorgehoben.'));
   return section;
  }
  function fixtures(t){
@@ -36,7 +49,7 @@
   for(const m of t.matches){const tr=el('tr',!m.score&&m.date>=today()?'tp-upcoming':'');tr.append(el('td','',fmt(m.date)),el('td','',m.time||'–'),el('td','',m.home?'Heim':'Auswärts'),el('td','',(m.home?'gg. ':'bei ')+m.opponent));const td=el('td');if(Array.isArray(m.score)){const style=m.score[0]>m.score[1]?'win':m.score[0]<m.score[1]?'loss':'draw';const badge=el('span','tp-score '+style,m.score.join(':'));if(m.report){const a=link('',m.report);a.setAttribute('aria-label','Spielbericht '+m.opponent);a.append(badge);td.append(a)}else td.append(badge)}else td.append(el('span','tp-muted','–'));tr.append(td);tbody.append(tr)}
   tab.append(tbody);scroll.append(tab);section.append(scroll);return section
  }
- function card(t){const a=link('',teamURL(t),'tp-card');const head=el('div','tp-card-top');head.append(el('strong','',t.name),el('span','tp-card-arrow','→'));a.append(head,el('div','tp-muted',t.group));const mark=promotion(t.promotion_status);if(mark){a.classList.add('tp-card-promotion');a.append(mark)}const numbers=el('div','tp-card-numbers');numbers.append(metric('Tabellenplatz',t.rank??'–'),metric('Punkte',t.points||'–'));a.append(numbers);return a}
+ function card(t){const a=link('',teamURL(t),'tp-card');const head=el('div','tp-card-top');head.append(el('strong','',t.name),el('span','tp-card-arrow','→'));a.append(head,el('div','tp-muted',t.group));const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark){a.classList.add('tp-card-promotion');a.append(mark)}if(down){a.classList.add('tp-card-relegation');a.append(down)}const numbers=el('div','tp-card-numbers');numbers.append(metric('Tabellenplatz',t.rank??'–'),metric('Punkte',t.points||'–'));a.append(numbers);return a}
  function render(){
   if(!data)return;
   const fragment=document.createDocumentFragment(),all=data.teams;
@@ -46,7 +59,7 @@
    document.title=t.name+' · '+t.season+' | NTC 93';
    const header=el('div','tp-detail-header');header.append(link('← Alle Mannschaften','/mannschaften/?saison='+encodeURIComponent(t.season),'tp-back'),el('div','tp-kicker',t.season+' · '+t.category),el('h1','',t.name),el('p','tp-muted',t.group));
    const metrics=el('div','tp-metrics');metrics.append(metric('Tabellenplatz',t.rank??'–'),metric('Tabellenpunkte',t.points||'–'),metric('Begegnungen',t.table.find(r=>r.own)?.played||'–'));
-   const mark=promotion(t.promotion_status);if(mark)header.append(mark);header.append(metrics);fragment.append(header,table(t),fixtures(t),sourceLine(t));root.replaceChildren(fragment);return
+   const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark)header.append(mark);if(down)header.append(down);header.append(metrics);fragment.append(header,table(t),fixtures(t),sourceLine(t));root.replaceChildren(fragment);return
   }
   if(!data.seasons.includes(season))season=data.seasons[0]||'';
   const pool=all.filter(t=>t.season===season);
