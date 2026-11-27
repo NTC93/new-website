@@ -425,6 +425,7 @@ source.head.style.append(SPONSOR_CSS)
 
 # Use the original drone footage from the club's published article.
 # Only a locally stored video is eligible; no third-party player or tracking.
+DRONE_REPORT={'status':'pending'}
 def integrate_drone_hero(source):
     import subprocess, shutil, tempfile
     article='/der-ntc-aus-der-vogelperspektive/'
@@ -450,7 +451,31 @@ def integrate_drone_hero(source):
             # Elementor may keep a self-hosted media URL in serialized widget settings.
             if not candidates:
                 for m in re.finditer(r'https?://[^"\'<>\s]+?\.(?:mp4|webm|mov|m4v)',html.unescape(str(main)).replace('\\/','/'),re.I):add(m.group())
-            if not candidates:raise ValueError('no self-hosted video found in drone article; external embeds are intentionally not autoplayed')
+            # The post may reference a WordPress attachment rather than an MP4 URL.
+            # Only inspect media explicitly attached to this exact public article.
+            if not candidates:
+                try:
+                    api=urljoin(BASE,'wp-json/wp/v2/')
+                    response=requests.get(api+'posts',params={'slug':article.strip('/'),'_fields':'id,content'},headers=HEADERS,timeout=(8,20))
+                    response.raise_for_status()
+                    for post in response.json():
+                        rendered=html.unescape(post.get('content',{}).get('rendered','')).replace('\\/','/')
+                        for m in re.finditer(r'https?://[^"\'<>\s]+?\.(?:mp4|webm|mov|m4v)',rendered,re.I):add(m.group())
+                        response=requests.get(api+'media',params={'parent':post['id'],'media_type':'video','per_page':100,'_fields':'source_url,mime_type'},headers=HEADERS,timeout=(8,20))
+                        response.raise_for_status()
+                        for item in response.json():
+                            if item.get('mime_type','').startswith('video/'):add(item.get('source_url'))
+                except Exception as exc:
+                    print('::warning::Drone attachment lookup failed:',type(exc).__name__)
+            DRONE_REPORT['candidate_count']=len(candidates)
+            if not candidates:
+                providers=set()
+                for frame in page.select('iframe[src],a[href]'):
+                    host=urlsplit(urljoin(url,frame.get('src') or frame.get('href',''))).hostname or ''
+                    if host in ('youtu.be','youtube.com','www.youtube.com','www.youtube-nocookie.com','player.vimeo.com','vimeo.com','www.vimeo.com'):
+                        providers.add(host)
+                if providers:DRONE_REPORT['external_video_providers']=sorted(providers)
+                raise ValueError('no self-hosted video found in drone article; external embeds are intentionally not autoplayed')
             if not shutil.which('ffmpeg'):raise ValueError('ffmpeg unavailable')
             output.parent.mkdir(parents=True,exist_ok=True)
             with tempfile.TemporaryDirectory() as temp:
@@ -476,15 +501,19 @@ def integrate_drone_hero(source):
                         shutil.copyfile(hero,output);shutil.copyfile(still,poster);shutil.copyfile(whole,fullvideo)
                         break
                     except Exception as exc:
+                        DRONE_REPORT['last_candidate_error']=type(exc).__name__
                         print('::warning::Drone video candidate could not be processed:',type(exc).__name__)
                 else:raise ValueError('no playable local drone video')
             print('Drone footage prepared:',output.stat().st_size,'bytes header clip')
         except Exception as exc:
+            DRONE_REPORT.update(status='unavailable',reason=str(exc)[:180])
             print('::warning::Drone header unavailable; existing photo slider retained:',str(exc)[:180])
             return False
     slides=source.select_one('.hero .slides')
     script=next((x for x in source.find_all('script') if x.string and 'const slides=[...document.querySelectorAll' in x.string),None)
-    if not slides or not script:return False
+    if not slides or not script:
+        DRONE_REPORT.update(status='unavailable',reason='hero template not found')
+        return False
     video=source.new_tag('video',attrs={'class':'slide drone-slide','muted':'','playsinline':'','preload':'none','poster':'/media/ntc-drohnenflug-poster.jpg','aria-hidden':'true','data-src':'/media/ntc-drohnenflug-hero.mp4','loop':''})
     # Video as first slide; keep all four original photos.
     slides.insert(0,video)
@@ -492,8 +521,10 @@ def integrate_drone_hero(source):
     video['class']=['slide','drone-slide','active']
     source.head.style.append(".hero video.drone-slide{width:100%;height:100%;object-fit:cover;object-position:center;pointer-events:none}.hero .drone-slide.active{opacity:1}@media(prefers-reduced-motion:reduce){.hero .slide{transition:none}}")
     script.string="""(()=>{const slides=[...document.querySelectorAll('.hero .slide')],labels=['Unser NTC aus der Vogelperspektive','Unsere Anlage','Unsere Tennishalle','Unser Vereinsleben','Gemeinschaft auf und neben dem Platz'];const topics=[['Tennis in Neuenhagen.','Unser Verein aus einer ganz neuen Perspektive.','Drohnenflug ansehen','/der-ntc-aus-der-vogelperspektive/'],['Tennis in Neuenhagen.','Sport, Gemeinschaft und Vereinsleben beim NTC 93.','Den Verein entdecken','/ueber-uns/'],['Tennis das ganze Jahr.','Unsere Tennishalle – auch im Winter auf dem Platz.','Zur Tennishalle','/tennishalle/'],['Gemeinsam auf dem Platz.','Von der Jugend bis zu den Seniorenteams.','Unsere Teams','/mannschaften/'],['Mehr als ein Verein.','Begegnungen auf und neben dem Tennisplatz.','Aktuelles aus dem NTC','/news/']];const reduced=matchMedia('(prefers-reduced-motion: reduce)'),saveData=!!navigator.connection?.saveData;let index=0,paused=reduced.matches,timer;const p=document.querySelector('#pause');function media(){slides.forEach((s,i)=>{if(s.tagName!=='VIDEO')return;s.pause();if(i===index&&!paused&&!document.hidden&&!saveData){s.muted=true;s.playsInline=true;if(!s.src)s.src=s.dataset.src;s.play().catch(()=>{})}})}function show(n){index=(n+slides.length)%slides.length;slides.forEach((s,i)=>{s.classList.toggle('active',i===index);s.setAttribute('aria-hidden',i===index?'false':'true')});document.querySelector('#count').textContent=String(index+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');document.querySelector('#photoCaption').textContent=labels[index];const t=topics[index];document.querySelector('#slideTitle').textContent=t[0];document.querySelector('#slideText').textContent=t[1];const a=document.querySelector('#slideLink');a.href=t[3];a.textContent=t[2]+' ↗';media()}function schedule(){clearTimeout(timer);media();if(!paused&&!document.hidden)timer=setTimeout(()=>{show(index+1);schedule()},slides[index].tagName==='VIDEO'?16000:6500)}function updatePause(){p.textContent=paused?'▶':'Ⅱ';p.setAttribute('aria-pressed',String(paused));p.setAttribute('aria-label',paused?'Bildwechsel fortsetzen':'Bildwechsel pausieren');schedule()}document.querySelector('#prev').onclick=()=>{show(index-1);schedule()};document.querySelector('#next').onclick=()=>{show(index+1);schedule()};p.onclick=()=>{paused=!paused;updatePause()};document.addEventListener('visibilitychange',schedule);show(reduced.matches||saveData?1:0);updatePause()})();"""
+    DRONE_REPORT.update(status='prepared',header_bytes=output.stat().st_size,poster_bytes=poster.stat().st_size,full_video_bytes=fullvideo.stat().st_size)
     return True
 DRONE_AVAILABLE=integrate_drone_hero(source)
+print('Drone video status:',json.dumps(DRONE_REPORT,ensure_ascii=False),flush=True)
 
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
 
@@ -982,7 +1013,7 @@ for file in ROOT.rglob('*.html'):
 archive_report['discovered']=len(NEWS)
 archive_report['imported']=sum(1 for p,_,_ in NEWS if p in local)
 archive_report['failed']=[p for p,_,_ in NEWS if p not in local]
-report={'sponsor_count':len(SPONSORS),'archive':archive_report,'media_and_links':migration,'imported':sorted(local),'skipped':{p:re.sub(r'https?://[^\s]+','[URL]',err) for p,(_,_,_,err) in loaded.items() if err}}
+report={'drone_video':DRONE_REPORT,'sponsor_count':len(SPONSORS),'archive':archive_report,'media_and_links':migration,'imported':sorted(local),'skipped':{p:re.sub(r'https?://[^\s]+','[URL]',err) for p,(_,_,_,err) in loaded.items() if err}}
 if archive_report['expected'] and archive_report['imported']<archive_report['expected']:
     print('::warning::Archive incomplete: '+str(archive_report['imported'])+' imported, at least '+str(archive_report['expected'])+' indicated by source')
 print('Legacy asset/link migration:',migration['assets_downloaded'],'files;',len(migration['missing_assets']),'missing assets;',len(migration['unresolved_links']),'unresolved references')
