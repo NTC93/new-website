@@ -54,6 +54,13 @@ jobs:
             echo "::warning::nuLiga refresh failed. Existing remote match data remains unchanged."
             [[ "$GITHUB_EVENT_NAME" != schedule ]] || exit 1
           fi
+      - name: Refresh public nuLiga teams and group standings
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python3 tools/teams.py; then
+            echo "::warning::nuLiga team import failed. Existing remote team data remains unchanged."
+          fi
       - name: Validate PHP and JavaScript syntax
         if: github.event_name != 'schedule'
         run: |
@@ -62,6 +69,9 @@ jobs:
           python3 -m py_compile tools/export_cms.py
           node --check site/cms-public.js
           node --check site/club-enhancements.js
+          node --check site/matchcenter.js
+          node --check site/teams.js
+          python3 -m py_compile tools/teams.py
           python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
       - name: Restore downloaded public media
         if: github.event_name != 'schedule'
@@ -115,6 +125,12 @@ jobs:
             upload site/matches.json matches.json
             status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/matches.txt" --write-out '%{http_code}' "https://neu.ntc93.de/matches.json?run=$GITHUB_RUN_ID")
             [[ "$status" == 200 ]] && cmp -s site/matches.json "$RUNNER_TEMP/matches.txt" || { echo "Match data verification failed"; exit 1; }
+            if [[ -f site/teams.json ]]; then
+              upload site/teams.json teams.json
+              curl --fail --silent --show-error --max-time 40 "https://neu.ntc93.de/teams.json?run=$GITHUB_RUN_ID" -o "$RUNNER_TEMP/teams-verified.json"
+              cmp -s site/teams.json "$RUNNER_TEMP/teams-verified.json"
+              echo 'Team tables refreshed and verified.'
+            fi
             echo 'Match data refreshed and verified.'
             exit 0
           fi
@@ -157,7 +173,7 @@ jobs:
           for p in sorted(root.rglob('*')):
               if not p.is_file():continue
               rel=p.relative_to(root).as_posix()
-              if rel in ('index.html','migration-report.json','matches.json','ntc-deploy-manifest.json') or rel.startswith('admin/private/'):
+              if rel in ('index.html','migration-report.json','matches.json','teams.json','ntc-deploy-manifest.json') or rel.startswith('admin/private/'):
                   continue
               files[rel]=hashlib.sha256(p.read_bytes()).hexdigest()
           # A hash is retained only for an unchanged file or a confirmed transfer.
@@ -214,6 +230,11 @@ jobs:
           # Match data is updated independently of the website manifest.
           if [[ -f site/matches.json ]]; then
             upload site/matches.json matches.json
+          fi
+          if [[ -f site/teams.json ]]; then
+            upload site/teams.json teams.json
+            curl --fail --silent --show-error --max-time 40 "https://neu.ntc93.de/teams.json?run=$GITHUB_RUN_ID" -o "$RUNNER_TEMP/teams-verified.json"
+            cmp -s site/teams.json "$RUNNER_TEMP/teams-verified.json"
           fi
           upload site/index.html index.html
           # Verify the news page was uploaded, not just the homepage.
