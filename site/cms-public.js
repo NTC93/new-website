@@ -23,20 +23,23 @@
   const compact=target.dataset.clubEvents==='compact';
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   // Remove expired fallback rows even when the CMS is temporarily unavailable.
-  target.querySelectorAll('[data-event-date]').forEach(x=>{if(x.dataset.eventDate<today)x.remove()});
+  target.querySelectorAll('[data-event-date]').forEach(x=>{if((x.dataset.eventEnd||x.dataset.eventDate)<today)x.remove()});
   try{
    const response=await fetch('/admin/?public=events',{credentials:'omit',cache:'no-cache'});
    if(!response.ok)throw Error('CMS unavailable');
    const payload=await response.json();if(!Array.isArray(payload.items))throw Error('Invalid event list');
-   const upcoming=payload.items.filter(x=>x.data&&typeof x.data.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x.data.date)&&x.data.date>=today).sort((a,b)=>a.data.date.localeCompare(b.data.date)||String(a.data.time||'').localeCompare(String(b.data.time||'')));
+   const upcoming=payload.items.filter(x=>x.data&&typeof x.data.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x.data.date)&&(x.data.end_date||x.data.date)>=today).sort((a,b)=>a.data.date.localeCompare(b.data.date)||String(a.data.time||'').localeCompare(String(b.data.time||'')));
    target.replaceChildren();
    for(const item of (compact?upcoming.slice(0,4):upcoming)){
-    const row=make('article','club-event');row.dataset.eventDate=item.data.date;
+    const row=make('article','club-event');row.dataset.eventDate=item.data.date;row.dataset.eventEnd=item.data.end_date||item.data.date;
     const d=new Date(item.data.date+'T12:00:00Z');
-    const dt=make('div','club-event-date');dt.append(make('strong','',item.data.date.slice(8)),make('span','',new Intl.DateTimeFormat('de-DE',{month:'short',year:'numeric',timeZone:'Europe/Berlin'}).format(d)));
+    const end=item.data.end_date||item.data.date;
+    const day=item.data.date.slice(8);
+    const range=end>item.data.date?(end.slice(0,7)===item.data.date.slice(0,7)?day+'–'+end.slice(8):day+'.'+item.data.date.slice(5,7)+'.–'+end.slice(8)+'.'+end.slice(5,7)+'.'):day;
+    const dt=make('div','club-event-date');dt.append(make('strong','',range),make('span','',new Intl.DateTimeFormat('de-DE',{month:'short',year:'numeric',timeZone:'Europe/Berlin'}).format(d)));
     const copy=make('div','club-event-copy');copy.append(make('h3','',item.title));
     if(item.data.status&&item.data.status.toLowerCase()!=='bestätigt')copy.append(make('span','club-event-status',item.data.status));
-    const time=item.data.time?(item.data.time.includes('Uhr')?item.data.time:item.data.time+' Uhr'):'';
+    const time=item.data.time?(item.data.time+(item.data.end_time?'–'+item.data.end_time:'')+(item.data.time.includes('Uhr')?'':' Uhr')):'';
     const meta=[time,item.data.venue].filter(Boolean).join(' · ');
     if(meta)copy.append(make('p','club-event-meta',meta));
     if(!compact)paragraphs(copy,item.data.body);
