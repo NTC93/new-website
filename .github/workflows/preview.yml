@@ -58,6 +58,7 @@ jobs:
         run: |
           php -l site/admin/index.php
           node --check site/cms-public.js
+          node --check site/club-enhancements.js
           python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
       - name: Restore downloaded public media
         if: github.event_name != 'schedule'
@@ -124,6 +125,8 @@ jobs:
           # Verify the news page was uploaded, not just the homepage.
           curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/news/' -o "$RUNNER_TEMP/news.html"
           cmp -s site/news/index.html "$RUNNER_TEMP/news.html"
+          curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/anfahrt/' -o "$RUNNER_TEMP/arrival.html"
+          cmp -s site/anfahrt/index.html "$RUNNER_TEMP/arrival.html"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
           [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt"
           echo 'Preview deployed and verified.'
