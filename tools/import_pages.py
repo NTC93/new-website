@@ -337,6 +337,11 @@ source.head.style.append(SPONSOR_CSS)
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
 
 # Shared header and sponsor section for staging pages.
+# Published content is loaded independently from the generated site.
+cms_style=source.new_tag('link',attrs={'rel':'stylesheet','href':'/cms-public.css'})
+source.head.append(cms_style)
+cms_script=source.new_tag('script',attrs={'src':'/cms-public.js','defer':''})
+source.head.append(cms_script)
 (ROOT/'index.html').write_text(str(source),encoding='utf-8')
 header=str(source.header);footer=str(source.footer)
 head=copy.deepcopy(source.head)
@@ -558,6 +563,10 @@ h=copy.deepcopy(head);h.title.string='Sponsoren & Partner | NTC 93'
 sponsor_content='<div class="breadcrumbs"><a href="/">Startseite</a> / Sponsoren</div><h1 class="pagetitle">Sponsoren & Partner</h1><p>Vielen Dank an unsere Partner für ihre Unterstützung des Neuenhagener Tennisclub 93 e. V.</p>'+('<div class="sponsor-grid">'+sponsor_tiles()+'</div>' if SPONSORS else '<p><a href="https://ntc93.com/">Zur bisherigen Sponsorenübersicht →</a></p>')+'<a class="detail-action" href="'+html.escape(nav_target('Sponsor werden','/sponsor-werden/'),quote=True)+'">Sponsor werden ↗</a>'
 out=ROOT/'sponsoren/index.html';out.parent.mkdir(parents=True,exist_ok=True);out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+sponsor_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 
+# Dynamic article shell for CMS news, independent of static legacy articles.
+h=copy.deepcopy(head);h.title.string='Nachricht | NTC 93'
+out=ROOT/'redaktion/index.html';out.parent.mkdir(parents=True,exist_ok=True)
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page"><div class="breadcrumbs"><a href="/">Startseite</a> / <a href="/news/">Aktuelles</a></div><article id="cms-article" class="cms-article"><p>Nachricht wird geladen …</p></article></main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 report={'sponsor_count':len(SPONSORS),'imported':sorted(local),'skipped':{p:err for p,(_,_,_,err) in loaded.items() if err}}
 (ROOT/'migration-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 print('Imported',len(local),'pages:',', '.join(sorted(local)))
