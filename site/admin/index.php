@@ -50,7 +50,7 @@ if ($mediaId>0) {
 }
 if (isset($_GET['public'])) {
  $kind=(string)$_GET['public'];
- if(!in_array($kind,['pages','news','events','sponsors','slides','teams','people','documents','notices','menus','settings'],true))stop(404,'Unbekannter Bereich.');
+ if(!in_array($kind,['news','events','sponsors','notices'],true))stop(404,'Unbekannter Bereich.');
  if(!isset($types[$kind]))stop(404,'Unbekannter Bereich.');
  $q=run("SELECT slug,published_title AS title,published_data AS data,publish_at,position FROM cms_entries WHERE kind=? AND state!='archived' AND published_data IS NOT NULL AND publish_at<=NOW() ORDER BY position ASC,publish_at DESC,id DESC",[$kind]);
  $out=[];foreach($q as $row){$row['data']=json_decode($row['data'],true)??[];$out[]=$row;}
@@ -181,7 +181,7 @@ if(isset($types[$area])){
  $list=run('SELECT id,title,state,published_data IS NOT NULL AS live,publish_at,updated_at FROM cms_entries WHERE kind=?'.($publish?'':' AND owner_id=?').' ORDER BY updated_at DESC',$publish?[$area]:[$area,$uid]);
  $body=$msg.'<a class="button" href="?area='.e($area).'&edit=1">+ Neu anlegen</a><div class="panel"><table><thead><tr><th>Titel</th><th>Status</th><th>Geändert</th></tr></thead><tbody>';
  foreach($list as $row)$body.='<tr><td><a href="?area='.e($area).'&id='.$row['id'].'">'.e($row['title']).'</a></td><td>'.e($row['state']==='archived'?'Archiviert':($row['state']==='draft'?($row['live']?'Entwurf · frühere Version online':'Entwurf'):'Veröffentlicht / geplant')).'</td><td>'.e($row['updated_at']).'</td></tr>';
- shell($label,$body.'</tbody></table><p class="muted">Nur im CMS angelegte Inhalte. Importierte Website-Inhalte werden zunächst separat geführt. Veröffentlichte Daten sind öffentlich.</p></div>',$u);
+ shell($label,$body.'</tbody></table><p class="muted">Nur im CMS angelegte Inhalte. Importierte Website-Inhalte werden zunächst separat geführt. In den angebundenen Bereichen sind veröffentlichte Daten öffentlich. Keine Zugangsdaten oder vertraulichen Mitgliederdaten eintragen.</p></div>',$u);
 }
 if($area==='media'){
  $body=$msg.'<form class="panel" method="post" enctype="multipart/form-data">'.csrf().'<input type="hidden" name="action" value="upload"><p>Öffentliche Website-Medien, max. 5 MB. Keine vertraulichen Dokumente hochladen.</p><label>Datei (JPG, PNG, WebP, GIF, PDF)<input type="file" name="file" required></label><label>Alternativtext<input name="alt"></label><button>Hochladen</button></form><div class="media-grid">';
