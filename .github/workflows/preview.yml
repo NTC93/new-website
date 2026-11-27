@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     paths: ['site/**', 'tools/**', '.github/workflows/preview.yml']
+  schedule:
+    - cron: '17 */4 * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare local copies of verified club images
+        if: github.event_name != 'schedule'
         shell: bash
         run: |
           set -euo pipefail
@@ -40,10 +43,19 @@ jobs:
               s = s.replace(url,'media/'+name)
           p.write_text(s)
           PY
-      - name: Build public subpages
+      - name: Install public data import dependencies
+        run: python3 -m pip install --disable-pip-version-check beautifulsoup4 requests
+      - name: Refresh public nuLiga matches
+        shell: bash
         run: |
-          python3 -m pip install --disable-pip-version-check beautifulsoup4 requests
-          python3 tools/import_pages.py
+          set -euo pipefail
+          if ! python3 tools/matchcenter.py; then
+            echo "::warning::nuLiga refresh failed. Existing remote match data remains unchanged."
+            [[ "$GITHUB_EVENT_NAME" != schedule ]] || exit 1
+          fi
+      - name: Build public subpages
+        if: github.event_name != 'schedule'
+        run: python3 tools/import_pages.py
       - name: Verify isolated FTPS target and publish preview
         shell: bash
         run: |
@@ -60,6 +72,13 @@ jobs:
           upload "$RUNNER_TEMP/probe.txt" "$probe"
           status=$(curl --silent --show-error --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/received.txt" --write-out '%{http_code}' "https://neu.ntc93.de/$probe")
           [[ "$status" == 200 ]] && cmp -s "$RUNNER_TEMP/probe.txt" "$RUNNER_TEMP/received.txt" || { echo 'FTPS directory not confirmed as neu.ntc93.de, or HTTP access protected. No website files uploaded.'; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            upload site/matches.json matches.json
+            status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/matches.txt" --write-out '%{http_code}' "https://neu.ntc93.de/matches.json?run=$GITHUB_RUN_ID")
+            [[ "$status" == 200 ]] && cmp -s site/matches.json "$RUNNER_TEMP/matches.txt"
+            echo 'Match data refreshed and verified.'
+            exit 0
+          fi
           while IFS= read -r -d '' f; do
             upload "$f" "${f#site/}"
           done < <(find site -type f ! -path site/index.html -print0)
