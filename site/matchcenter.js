@@ -1,0 +1,16 @@
+(() => {
+const root=document.querySelector('[data-matchcenter]'); if(!root)return;
+const full=root.dataset.matchcenter==='full', source='https://tvbb.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubMeetings?club=36381';
+const q=s=>root.querySelector(s), el=(tag,cls,value)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=value;return e};
+const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+let data, mode='all';
+function dateLabel(m){const d=m.date.split('-');return d[2]+'.'+d[1]+'.'+(full?d[0]:'')}
+function row(m,result){const a=el('a','match-row');a.href=m.report||source;const info=el('div','match-info');info.append(el('span','match-meta',dateLabel(m)+' · '+(m.home?'Heim':'Auswärts')+' · '+m.league),el('strong','match-team',m.team),el('span','match-opponent',m.opponent));a.append(info);
+if(result){const score=m.score;const c=score[0]>score[1]?'win':score[0]===score[1]?'draw':'loss';const badge=el('div','match-score '+c,score.join(':'));badge.setAttribute('aria-label',(c==='win'?'Sieg':c==='loss'?'Niederlage':'Unentschieden')+' '+score.join(' zu '));a.append(badge)}
+else{const t=el('div','match-time');t.append(el('strong','',m.time||'–'),el('span','',m.time?'Uhr':'offen'));a.append(t)}
+return a}
+function display(){const team=q('[data-team]')?.value||'',matches=data.matches.filter(m=>(mode!=='home'||m.home)&&(!team||m.team===team));const results=matches.filter(m=>Array.isArray(m.score)).sort((a,b)=>(b.date+(b.time||'')).localeCompare(a.date+(a.time||'')));const upcoming=matches.filter(m=>!m.score&&m.date>=today).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+for(const [target,rows,isResult] of [['[data-results]',results,true],['[data-fixtures]',upcoming,false]]){const box=q(target);box.replaceChildren();const visible=full?rows:rows.slice(0,3);for(const m of visible)box.append(row(m,isResult));if(!visible.length)box.append(el('p','match-empty',isResult?'Keine Ergebnisse vorhanden.':'Keine kommenden Begegnungen im aktuellen Zeitraum.'))}
+}
+async function load(){try{let response=await fetch('/matches.json',{cache:'no-cache'});if(!response.ok)throw Error('data unavailable');data=await response.json();if(!Array.isArray(data.matches)||!data.matches.length)throw Error('empty data');const stamp=new Date(data.updated);q('[data-updated]').textContent='Datenstand: '+new Intl.DateTimeFormat('de-DE',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Berlin'}).format(stamp)+' Uhr · nuLiga';const select=q('[data-team]');if(select){for(const team of [...new Set(data.matches.map(m=>m.team))].sort((a,b)=>a.localeCompare(b,'de',{numeric:true}))){const option=el('option','',team);option.value=team;select.append(option)}select.addEventListener('change',display)}root.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;root.querySelectorAll('[data-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));display()}));display()}catch(e){q('[data-updated]').textContent='Daten zurzeit nicht verfügbar · direkt bei nuLiga ansehen';for(const target of ['[data-results]','[data-fixtures]']){const a=el('a','match-empty','Begegnungen bei nuLiga öffnen ↗');a.href=source;q(target).replaceChildren(a)}}}load();
+})();
