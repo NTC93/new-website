@@ -30,7 +30,7 @@ function jsonout($v): never {header('Content-Type: application/json; charset=utf
 $types=[
  'pages'=>['Unterseiten',['path'=>'URL-Pfad','intro'=>'Einleitung','body'=>'Inhalt (Text, Absätze)','image'=>'Bild-URL','seo'=>'Meta-Beschreibung']],
  'news'=>['Nachrichten',['teaser'=>'Kurztext','body'=>'Artikeltext','image'=>'Bild-URL','category'=>'Kategorie']],
- 'events'=>['Termine',['date'=>'Datum (JJJJ-MM-TT)','time'=>'Uhrzeit','venue'=>'Ort','body'=>'Beschreibung','link'=>'Weiterführender Link']],
+ 'events'=>['Termine',['date'=>'Datum (JJJJ-MM-TT)','time'=>'Uhrzeit','venue'=>'Ort','body'=>'Beschreibung','link'=>'Weiterführender Link','status'=>'Terminstatus (Bestätigt / Voraussichtlich)']],
  'sponsors'=>['Sponsoren',['image'=>'Logo-URL','link'=>'Website','body'=>'Beschreibung','category'=>'Sponsorenkategorie']],
  'slides'=>['Startseiten-Slider',['image'=>'Bild-URL','body'=>'Untertitel','link'=>'Ziel-URL','button'=>'Buttontext']],
  'teams'=>['Mannschaften',['category'=>'Altersklasse','body'=>'Beschreibung','image'=>'Mannschaftsfoto','link'=>'nuLiga-Link']],
@@ -41,6 +41,18 @@ $types=[
  'settings'=>['Website-Einstellungen',['body'=>'Wert','link'=>'URL']]
 ];
 $long=['intro','body','teaser','seo'];
+
+/* One-time seed of the previously published club events. INSERT IGNORE preserves
+   subsequent editorial edits, archived entries and existing slugs. */
+$eventSeed=json_decode('[{"slug":"ntc-geburtstagsbrunch-2026","title":"NTC-Geburtstagsbrunch","data":{"date":"2026-12-06","time":"11:00–15:00","venue":"Clubhaus NTC 93","body":"Brunchbuffet für 20 € pro Person inklusive Sektempfang. Verbindliche Anmeldung mit Personenzahl an info@ntc93.de erforderlich.","link":"/33-jahre-ntc-und-ein-brunch-zum-anstossen/","status":"Bestätigt"}},{"slug":"arbeitseinsatz-tennishalle-2026-12","title":"Arbeitseinsatz Tennishalle","data":{"date":"2026-12-19","time":"","venue":"Tennishalle NTC 93","body":"Voraussichtlicher Termin. Die Uhrzeit und endgültige Bestätigung stehen noch aus.","link":"/fit-fuer-den-winter-unsere-halle-ist-bereit/","status":"Voraussichtlich"}}]',true);
+$firstAdmin=(int)run("SELECT COALESCE(MIN(id),0) FROM cms_users WHERE role='admin'")->fetchColumn();
+if($firstAdmin){
+ foreach($eventSeed as $event){
+  $payload=json_encode($event['data'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+  run("INSERT IGNORE INTO cms_entries(kind,slug,title,data,state,published_data,published_title,publish_at,position,owner_id,updated_by) VALUES('events',?,?,?,'published',?,?,NOW(),0,?,?)",[$event['slug'],$event['title'],$payload,$payload,$event['title'],$firstAdmin,$firstAdmin]);
+ }
+}
+
 $mediaId=(int)($_GET['media']??0);
 if ($mediaId>0) {
  // Media is an explicitly public library; no private documents or member records.
@@ -54,6 +66,7 @@ if (isset($_GET['public'])) {
  if(!isset($types[$kind]))stop(404,'Unbekannter Bereich.');
  $q=run("SELECT slug,published_title AS title,published_data AS data,publish_at,position FROM cms_entries WHERE kind=? AND state!='archived' AND published_data IS NOT NULL AND publish_at<=NOW() ORDER BY position ASC,publish_at DESC,id DESC",[$kind]);
  $out=[];foreach($q as $row){$row['data']=json_decode($row['data'],true)??[];$out[]=$row;}
+ if($kind==='events'&&!$firstAdmin)jsonout(['items'=>$eventSeed]);
  jsonout(['items'=>$out]);
 }
 session_name('NTC93_ADMIN');
