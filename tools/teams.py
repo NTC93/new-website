@@ -101,6 +101,15 @@ def parse_group(soup):
                 if not name or not re.fullmatch(r'\d+\.?',rank):continue
                 r={k:get(k) for k in fields}
                 r['rank']=int(rank.rstrip('.'));r['team_id']=team_id(cs[fields['name']])
+                # nuLiga uses a dedicated icon cell (alt/title="Aufsteiger").
+                # Read only status icons/labels, never infer promotion from rank.
+                marks=[]
+                for marker in tr.select('img[alt],img[title],span[title],abbr[title]'):
+                    marks.extend(str(marker.get(a,'')) for a in ('alt','title'))
+                if fields['rank'] is not None:
+                    for cell in cs[:fields['rank']]:
+                        marks.append(text(cell))
+                r['promotion']=any(re.search(r'\bAufsteiger\b|\bAufstiegsplatz\b',m,re.I) for m in marks)
                 standings.append(r)
         else:
             hi=index(labels,'heimmannschaft');ai=index(labels,'gastmannschaft')
@@ -162,6 +171,13 @@ def main():
                 mine=fallback
         if len(mine)==1:team['rank']=mine[0]['rank'];team['points']=mine[0]['points'];team['status']='ok';ok+=1
         else:team['status']='unmatched';print('::warning::Team identity not uniquely identified:',team['name'],team['season'])
+        # A current promotion position is not yet a confirmed season result.
+        # Only mark a completed competition as promoted when its entire schedule
+        # has been played, not simply when the team occupies first place.
+        complete=bool(fixtures) and all(f['score'] is not None for f in fixtures)
+        for row in table:
+            row['promotion_status']=('promoted' if complete else 'position') if row.get('promotion') else ''
+        team['promotion_status']=mine[0]['promotion_status'] if len(mine)==1 else ''
         team['table']=table
         for f in fixtures:
             home=own(team,f['home'],f['home_id']);away=own(team,f['away'],f['away_id'])
