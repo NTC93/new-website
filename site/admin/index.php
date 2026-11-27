@@ -6,6 +6,7 @@ header('X-Content-Type-Options: nosniff');
 header('X-Robots-Tag: noindex, nofollow');
 header('Referrer-Policy: same-origin');
 header('Cache-Control: no-store');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 header("Content-Security-Policy: default-src 'self'; style-src 'self'; img-src 'self' https:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
 date_default_timezone_set('Europe/Berlin');
 $configFile=__DIR__.'/private/config.php';
@@ -16,6 +17,7 @@ $c=require $configFile;
 if (!is_array($c)||empty($c['dsn'])||empty($c['db_user']))stop(503,'Konfiguration fehlt.');
 try {
  $db=new PDO($c['dsn'],$c['db_user'],$c['db_password']??'',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);
+ $db->exec("SET time_zone = ".$db->quote(date('P')));
  $db->exec("CREATE TABLE IF NOT EXISTS cms_users (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, login VARCHAR(100) NOT NULL UNIQUE, name VARCHAR(150) NOT NULL, password_hash VARCHAR(255) NOT NULL, role ENUM('admin','editor','author') NOT NULL, active TINYINT NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
  $db->exec("CREATE TABLE IF NOT EXISTS cms_entries (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(32) NOT NULL, slug VARCHAR(180) NOT NULL, title VARCHAR(240) NOT NULL, data LONGTEXT NOT NULL, state ENUM('draft','published','archived') NOT NULL DEFAULT 'draft', published_data LONGTEXT NULL, published_title VARCHAR(240) NULL, publish_at DATETIME NULL, position INT NOT NULL DEFAULT 0, owner_id BIGINT UNSIGNED NOT NULL, updated_by BIGINT UNSIGNED NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY kind_slug(kind,slug), KEY public_entries(kind,state,publish_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
  $db->exec("CREATE TABLE IF NOT EXISTS cms_revisions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, entry_id BIGINT UNSIGNED NOT NULL, actor_id BIGINT UNSIGNED NOT NULL, snapshot LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, KEY entry_history(entry_id,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -44,10 +46,11 @@ if ($mediaId>0) {
  // Media is an explicitly public library; no private documents or member records.
  $m=run('SELECT mime,bytes FROM cms_media WHERE id=?',[$mediaId])->fetch();
  if(!$m)stop(404,'Datei nicht gefunden.');
- header('Content-Type: '.$m['mime']);header('Cache-Control: public, max-age=86400');echo $m['bytes'];exit;
+ header('Content-Type: '.$m['mime']);if($m['mime']==='application/pdf')header('Content-Disposition: attachment; filename="NTC-Dokument.pdf"');header('Cache-Control: public, max-age=86400');echo $m['bytes'];exit;
 }
 if (isset($_GET['public'])) {
  $kind=(string)$_GET['public'];
+ if(!in_array($kind,['pages','news','events','sponsors','slides','teams','people','documents','notices','menus','settings'],true))stop(404,'Unbekannter Bereich.');
  if(!isset($types[$kind]))stop(404,'Unbekannter Bereich.');
  $q=run("SELECT slug,published_title AS title,published_data AS data,publish_at,position FROM cms_entries WHERE kind=? AND state!='archived' AND published_data IS NOT NULL AND publish_at<=NOW() ORDER BY position ASC,publish_at DESC,id DESC",[$kind]);
  $out=[];foreach($q as $row){$row['data']=json_decode($row['data'],true)??[];$out[]=$row;}
@@ -178,7 +181,7 @@ if(isset($types[$area])){
  $list=run('SELECT id,title,state,published_data IS NOT NULL AS live,publish_at,updated_at FROM cms_entries WHERE kind=?'.($publish?'':' AND owner_id=?').' ORDER BY updated_at DESC',$publish?[$area]:[$area,$uid]);
  $body=$msg.'<a class="button" href="?area='.e($area).'&edit=1">+ Neu anlegen</a><div class="panel"><table><thead><tr><th>Titel</th><th>Status</th><th>Geändert</th></tr></thead><tbody>';
  foreach($list as $row)$body.='<tr><td><a href="?area='.e($area).'&id='.$row['id'].'">'.e($row['title']).'</a></td><td>'.e($row['state']==='archived'?'Archiviert':($row['state']==='draft'?($row['live']?'Entwurf · frühere Version online':'Entwurf'):'Veröffentlicht / geplant')).'</td><td>'.e($row['updated_at']).'</td></tr>';
- shell($label,$body.'</tbody></table><p class="muted">Nur im CMS angelegte Inhalte. Importierte Website-Inhalte werden zunächst separat geführt.</p></div>',$u);
+ shell($label,$body.'</tbody></table><p class="muted">Nur im CMS angelegte Inhalte. Importierte Website-Inhalte werden zunächst separat geführt. Veröffentlichte Daten sind öffentlich.</p></div>',$u);
 }
 if($area==='media'){
  $body=$msg.'<form class="panel" method="post" enctype="multipart/form-data">'.csrf().'<input type="hidden" name="action" value="upload"><p>Öffentliche Website-Medien, max. 5 MB. Keine vertraulichen Dokumente hochladen.</p><label>Datei (JPG, PNG, WebP, GIF, PDF)<input type="file" name="file" required></label><label>Alternativtext<input name="alt"></label><button>Hochladen</button></form><div class="media-grid">';
@@ -199,5 +202,5 @@ if($area==='matchcenter'){
 }
 $body=$msg.'<div class="stats">';
 foreach($types as $k=>$t){if(!$admin&&in_array($k,['settings','menus'],true))continue;$n=(int)run('SELECT COUNT(*) FROM cms_entries WHERE kind=? AND state=?',[$k,'draft'])->fetchColumn();$body.='<a class="panel stat" href="?area='.e($k).'"><small>'.e($t[0]).'</small><strong>'.$n.'</strong><span>Entwürfe</span></a>';}
-$body.='</div><div class="panel"><h2>Mein Konto</h2><form method="post">'.csrf().'<input type="hidden" name="action" value="password"><label>Aktuelles Passwort<input type="password" name="current" required autocomplete="current-password"></label><label>Neues Passwort<input type="password" name="password" required minlength="14" autocomplete="new-password"></label><button>Passwort ändern</button></form></div><p class="muted">Redaktionsgrundlage · Öffentliche Website-Ausgabe und Inhaltsmigration werden separat verbunden.</p>';
+$body.='</div><div class="panel"><h2>Mein Konto</h2><form method="post">'.csrf().'<input type="hidden" name="action" value="password"><label>Aktuelles Passwort<input type="password" name="current" required autocomplete="current-password"></label><label>Neues Passwort<input type="password" name="password" required minlength="14" autocomplete="new-password"></label><button>Passwort ändern</button></form></div><p class="muted">Redaktionsgrundlage · Die öffentliche Ausgabe von Nachrichten, Sponsoren, Terminen und Hinweisen ist angebunden. Weitere Bereiche und Altinhalte folgen separat.</p>';
 shell('Übersicht',$body,$u);
