@@ -30,7 +30,7 @@ function jsonout($v): never {header('Content-Type: application/json; charset=utf
 $types=[
  'pages'=>['Unterseiten',['path'=>'URL-Pfad','intro'=>'Einleitung','body'=>'Inhalt (Text, Absätze)','image'=>'Bild-URL','seo'=>'Meta-Beschreibung']],
  'news'=>['Nachrichten',['teaser'=>'Kurztext','body'=>'Artikeltext','image'=>'Bild-URL','category'=>'Kategorie']],
- 'events'=>['Termine',['date'=>'Datum (JJJJ-MM-TT)','time'=>'Uhrzeit','venue'=>'Ort','body'=>'Beschreibung','link'=>'Weiterführender Link','status'=>'Terminstatus (Bestätigt / Voraussichtlich)']],
+ 'events'=>['Termine',['date'=>'Beginn (JJJJ-MM-TT)','end_date'=>'Enddatum inkl. (JJJJ-MM-TT, optional)','time'=>'Beginn (HH:MM)','end_time'=>'Endzeit (HH:MM, optional)','venue'=>'Ort','body'=>'Beschreibung','link'=>'Weiterführender Link','status'=>'Terminstatus (Bestätigt / Voraussichtlich)']],
  'sponsors'=>['Sponsoren',['image'=>'Logo-URL','link'=>'Website','body'=>'Beschreibung','category'=>'Sponsorenkategorie']],
  'slides'=>['Startseiten-Slider',['image'=>'Bild-URL','body'=>'Untertitel','link'=>'Ziel-URL','button'=>'Buttontext']],
  'teams'=>['Mannschaften',['category'=>'Altersklasse','body'=>'Beschreibung','image'=>'Mannschaftsfoto','link'=>'nuLiga-Link']],
@@ -44,7 +44,7 @@ $long=['intro','body','teaser','seo'];
 
 /* One-time seed of the previously published club events. INSERT IGNORE preserves
    subsequent editorial edits, archived entries and existing slugs. */
-$eventSeed=json_decode('[{"slug":"ntc-geburtstagsbrunch-2026","title":"NTC-Geburtstagsbrunch","data":{"date":"2026-12-06","time":"11:00–15:00","venue":"Clubhaus NTC 93","body":"Brunchbuffet für 20 € pro Person inklusive Sektempfang. Verbindliche Anmeldung mit Personenzahl an info@ntc93.de erforderlich.","link":"/33-jahre-ntc-und-ein-brunch-zum-anstossen/","status":"Bestätigt"}},{"slug":"arbeitseinsatz-tennishalle-2026-12","title":"Arbeitseinsatz Tennishalle","data":{"date":"2026-12-19","time":"","venue":"Tennishalle NTC 93","body":"Voraussichtlicher Termin. Die Uhrzeit und endgültige Bestätigung stehen noch aus.","link":"/fit-fuer-den-winter-unsere-halle-ist-bereit/","status":"Voraussichtlich"}}]',true);
+$eventSeed=json_decode('[{"slug":"ntc-geburtstagsbrunch-2026","title":"NTC-Geburtstagsbrunch","data":{"date":"2026-12-06","time":"11:00–15:00","venue":"Clubhaus NTC 93","body":"Brunchbuffet für 20 € pro Person inklusive Sektempfang. Verbindliche Anmeldung mit Personenzahl an info@ntc93.de erforderlich.","link":"/33-jahre-ntc-und-ein-brunch-zum-anstossen/","status":"Bestätigt"}},{"slug":"arbeitseinsatz-tennishalle-2026-12","title":"Arbeitseinsatz Tennishalle","data":{"date":"2026-12-19","time":"","venue":"Tennishalle NTC 93","body":"Voraussichtlicher Termin. Die Uhrzeit und endgültige Bestätigung stehen noch aus.","link":"/fit-fuer-den-winter-unsere-halle-ist-bereit/","status":"Voraussichtlich"}},{"slug":"regelworkshop-2027","title":"Tennis-Regelworkshop","data":{"date":"2027-03-04","end_date":"","time":"19:00","end_time":"","venue":"Clubhaus NTC 93","body":"Regelwissen und Praxis, Dauer ca. 2–2,5 Stunden. NTC-Mitglieder und berechtigte Angehörige kostenlos; Gäste bis 31.01.2027 15 €, danach 25 €.","link":"https://tennis-schiri.de/turniere/","status":"Bestätigt"}},{"slug":"indoor-mixed-2027","title":"Indoor-Mixed-LK-Turnier","data":{"date":"2027-03-27","end_date":"","time":"","end_time":"","venue":"Tennishalle NTC 93","body":"Mixed 40 Doppel und Mixed Aktive Doppel, LK 1,0–25,0. Meldeschluss 25.03.2027, 18 Uhr; Auslosung 19 Uhr.","link":"https://tennis-schiri.de/turniere/","status":"Bestätigt"}},{"slug":"lk-neuenhagen-2027-04-24","title":"LK-Turnier Neuenhagen","data":{"date":"2027-04-24","end_date":"","time":"","end_time":"","venue":"NTC 93, Hildesheimer Straße 11–13, Neuenhagen","body":"Outdoor, Sand. Ausschreibung und Konkurrenzen folgen.","link":"https://tennis-schiri.de/turniere/","status":"Bestätigt"}},{"slug":"lk-neuenhagen-2027-04-25","title":"LK-Turnier Neuenhagen","data":{"date":"2027-04-25","end_date":"","time":"","end_time":"","venue":"NTC 93, Hildesheimer Straße 11–13, Neuenhagen","body":"Outdoor, Sand. Ausschreibung und Konkurrenzen folgen.","link":"https://tennis-schiri.de/turniere/","status":"Bestätigt"}},{"slug":"neuenhagen-open-2027","title":"22. Neuenhagen Open (A4)","data":{"date":"2027-06-15","end_date":"2027-06-20","time":"","end_time":"","venue":"NTC 93, Hildesheimer Straße 11–13, Neuenhagen","body":"DTB-Ranglistenturnier A4 auf Sand. Ausschreibung und Anmeldung folgen.","link":"https://tennis-schiri.de/turniere/termin.html?id=turnier-neuenhagen-open-2027","status":"Bestätigt"}},{"slug":"neuenhagen-senior-open-2027","title":"10. Neuenhagen Senior Open (S3)","data":{"date":"2027-06-18","end_date":"2027-06-23","time":"","end_time":"","venue":"NTC 93, Hildesheimer Straße 11–13, Neuenhagen","body":"DTB-Ranglistenturnier S3 auf Sand. Ausschreibung und Anmeldung folgen.","link":"https://tennis-schiri.de/turniere/","status":"Bestätigt"}}]',true);
 $firstAdmin=(int)run("SELECT COALESCE(MIN(id),0) FROM cms_users WHERE role='admin'")->fetchColumn();
 if($firstAdmin){
  foreach($eventSeed as $event){
@@ -60,6 +60,72 @@ if ($mediaId>0) {
  if(!$m)stop(404,'Datei nicht gefunden.');
  header('Content-Type: '.$m['mime']);if($m['mime']==='application/pdf')header('Content-Disposition: attachment; filename="NTC-Dokument.pdf"');header('Cache-Control: public, max-age=86400');echo $m['bytes'];exit;
 }
+
+/* Subscribable RFC 5545 feed, using only publicly published events.
+   Event slugs are immutable after publication and form stable calendar UIDs. */
+if(isset($_GET['calendar'])){
+ $rows=[];
+ if(!$firstAdmin){$rows=$eventSeed;}
+ else{
+  foreach(run("SELECT slug,published_title AS title,published_data AS data,updated_at FROM cms_entries WHERE kind='events' AND state!='archived' AND published_data IS NOT NULL AND publish_at<=NOW()") as $row){
+   $row['data']=json_decode($row['data'],true)??[];$rows[]=$row;
+  }
+ }
+ function ics_escape(string $v):string{return str_replace(["\\","\r\n","\r","\n",",",";"],["\\\\","\\n","\\n","\\n","\\,","\\;"],$v);}
+ function ics_line(string $v):string{
+  $parts=preg_split('//u',$v,-1,PREG_SPLIT_NO_EMPTY);if($parts===false)return '';
+  $out='';$line='';
+  foreach($parts as $c){if(strlen($line)+strlen($c)>75){$out.=$line."\r\n";$line=' ';}$line.=$c;}
+  return $out.$line."\r\n";
+ }
+ function ics_date($value):?DateTimeImmutable{
+  if(!is_string($value)||!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$value))return null;
+  $date=DateTimeImmutable::createFromFormat('!Y-m-d',$value,new DateTimeZone('Europe/Berlin'));
+  return $date&&$date->format('Y-m-d')===$value?$date:null;
+ }
+ $lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NTC 93//Vereinstermine//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:NTC 93 - Vereinstermine','X-WR-TIMEZONE:Europe/Berlin','REFRESH-INTERVAL;VALUE=DURATION:PT4H','X-PUBLISHED-TTL:PT4H'];
+ foreach($rows as $row){
+  $d=$row['data'];$start=ics_date($d['date']??null);if(!$start)continue;
+  $end=ics_date($d['end_date']??null)??$start;if($end<$start)$end=$start;
+  $uid=hash('sha256','ntc93-event:'.$row['slug']).'@ntc93.de';
+  $stamp=isset($row['updated_at'])?(new DateTimeImmutable($row['updated_at'],new DateTimeZone('Europe/Berlin')))->setTimezone(new DateTimeZone('UTC'))->format('Ymd\THis\Z'):'20261127T000000Z';
+  $lines[]='BEGIN:VEVENT';$lines[]='UID:'.$uid;$lines[]='DTSTAMP:'.$stamp;
+  $startTime='';$endTime='';
+  if(preg_match('/^([01]\d|2[0-3]):([0-5]\d)(?:\s*[–-]\s*((?:[01]\d|2[0-3]):[0-5]\d))?/',(string)($d['time']??''),$m)){
+   $startTime=$m[1].':'.$m[2];$endTime=$m[3]??'';
+  }
+  if(preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/D',(string)($d['end_time']??'')))$endTime=$d['end_time'];
+  if($startTime!==''){
+   [$h,$m]=array_map('intval',explode(':',$startTime));
+   $st=$start->setTime($h,$m)->setTimezone(new DateTimeZone('UTC'));
+   $lines[]='DTSTART:'.$st->format('Ymd\THis\Z');
+   if($endTime!==''){
+    [$h,$m]=array_map('intval',explode(':',$endTime));$et=$end->setTime($h,$m)->setTimezone(new DateTimeZone('UTC'));
+    if($et>$st)$lines[]='DTEND:'.$et->format('Ymd\THis\Z');
+   }
+  }else{
+   $lines[]='DTSTART;VALUE=DATE:'.$start->format('Ymd');
+   $lines[]='DTEND;VALUE=DATE:'.$end->modify('+1 day')->format('Ymd');
+  }
+  $lines[]='SUMMARY:'.ics_escape((string)$row['title']);
+  $lines[]='LOCATION:'.ics_escape((string)($d['venue']??''));
+  $description=(string)($d['body']??'');
+  if(!empty($d['status'])&&$d['status']!=='Bestätigt')$description.="\nStatus: ".$d['status'];
+  $lines[]='DESCRIPTION:'.ics_escape($description);
+  $lines[]='STATUS:'.(stripos((string)($d['status']??''),'voraussichtlich')!==false?'TENTATIVE':'CONFIRMED');
+  $link=(string)($d['link']??'');
+  if(str_starts_with($link,'/')&&!str_starts_with($link,'//'))$link='https://ntc93.de'.$link;
+  if(filter_var($link,FILTER_VALIDATE_URL)&&in_array(parse_url($link,PHP_URL_SCHEME),['http','https'],true)&&!preg_match('/[\r\n]/',$link))$lines[]='URL:'.$link;
+  $lines[]='END:VEVENT';
+ }
+ $lines[]='END:VCALENDAR';
+ header('Content-Type: text/calendar; charset=utf-8');
+ header('Content-Disposition: inline; filename="ntc93-termine.ics"');
+ header('Cache-Control: public, max-age=300');
+ foreach($lines as $line)echo ics_line($line);
+ exit;
+}
+
 if (isset($_GET['public'])) {
  $kind=(string)$_GET['public'];
  if(!in_array($kind,['news','events','sponsors','notices'],true))stop(404,'Unbekannter Bereich.');
