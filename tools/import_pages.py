@@ -422,6 +422,79 @@ SPONSOR_CSS="""
 .sponsor-band{max-width:1320px;margin:0 auto;padding:24px clamp(20px,5vw,68px) 42px}.sponsor-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:16px}.sponsor-head h2{font-size:clamp(21px,2.4vw,29px);margin:5px 0;color:#183c2b;letter-spacing:-.03em}.sponsor-link{font-weight:650;color:#146143;font-size:13px;white-space:nowrap}.sponsor-track{display:flex;gap:12px;overflow-x:auto;padding:4px 1px 12px;scroll-snap-type:x proximity}.sponsor-logo{flex:0 0 150px;min-width:0;min-height:88px;background:white;border:1px solid #e1e9e2;border-radius:9px;display:grid;place-items:center;padding:15px;scroll-snap-align:start}.sponsor-logo img{width:100%;height:62px;object-fit:contain}.sponsor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:26px 0 35px}.sponsor-grid .sponsor-logo{min-height:120px}.sponsor-grid .sponsor-logo img{height:83px}@media(max-width:540px){.sponsor-logo{flex-basis:125px;min-height:75px;padding:12px}.sponsor-logo img{height:50px}.sponsor-head{align-items:flex-start;flex-direction:column;gap:4px}}
 """
 source.head.style.append(SPONSOR_CSS)
+
+# Use the original drone footage from the club's published article.
+# Only a locally stored video is eligible; no third-party player or tracking.
+def integrate_drone_hero(source):
+    import subprocess, shutil, tempfile
+    article='/der-ntc-aus-der-vogelperspektive/'
+    output=ROOT/'media/ntc-drohnenflug-hero.mp4'
+    poster=ROOT/'media/ntc-drohnenflug-poster.jpg'
+    fullvideo=ROOT/'media/ntc-drohnenflug-original.mp4'
+    if not (output.is_file() and poster.is_file() and fullvideo.is_file()):
+        try:
+            page,url=fetch(urljoin(BASE,article))
+            candidates=[]
+            def add(value):
+                if not isinstance(value,str):return
+                u=urljoin(url,html.unescape(value).replace('\\/','/'))
+                p=urlsplit(u)
+                if p.scheme=='https' and p.hostname in HOSTS and re.search(r'\.(mp4|webm|mov|m4v)$',p.path,re.I) and u not in candidates:candidates.append(u)
+            main=page.select_one('main, .site-main, article, .entry-content') or page
+            for el in main.select('video, video source, a[href], [data-settings], [data-video-url], [data-src]'):
+                for attr in ('src','href','data-src','data-video-url','data-video','data-settings'):
+                    value=el.get(attr)
+                    if not isinstance(value,str):continue
+                    add(value)
+                    for m in re.finditer(r'https?://[^"\'<>\s]+?\.(?:mp4|webm|mov|m4v)(?:\?[^"\'<>\s]*)?',html.unescape(value).replace('\\/','/'),re.I):add(m.group())
+            # Elementor may keep a self-hosted media URL in serialized widget settings.
+            if not candidates:
+                for m in re.finditer(r'https?://[^"\'<>\s]+?\.(?:mp4|webm|mov|m4v)',html.unescape(str(main)).replace('\\/','/'),re.I):add(m.group())
+            if not candidates:raise ValueError('no self-hosted video found in drone article; external embeds are intentionally not autoplayed')
+            if not shutil.which('ffmpeg'):raise ValueError('ffmpeg unavailable')
+            output.parent.mkdir(parents=True,exist_ok=True)
+            with tempfile.TemporaryDirectory() as temp:
+                src=Path(temp)/'source-video'
+                for candidate in candidates:
+                    try:
+                        with requests.get(candidate,headers=HEADERS,timeout=(8,45),stream=True) as response:
+                            response.raise_for_status()
+                            if urlsplit(response.url).hostname not in HOSTS:raise ValueError('external media redirect')
+                            if 'text/html' in response.headers.get('Content-Type',''):raise ValueError('not video')
+                            size=0
+                            with src.open('wb') as f:
+                                for chunk in response.iter_content(1024*1024):
+                                    size+=len(chunk)
+                                    if size>250*1024*1024:raise ValueError('video exceeds migration size limit')
+                                    f.write(chunk)
+                        # Optimized 16-second excerpt for the header, plus full article playback.
+                        hero=Path(temp)/'hero.mp4';still=Path(temp)/'poster.jpg';whole=Path(temp)/'full.mp4'
+                        ff=['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y','-i',str(src)]
+                        subprocess.run(ff+['-t','16','-map','0:v:0','-an','-vf',"scale='min(1280,iw)':-2,fps=25",'-c:v','libx264','-preset','fast','-crf','25','-pix_fmt','yuv420p','-movflags','+faststart',str(hero)],check=True,timeout=120)
+                        subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y','-ss','1','-i',str(hero),'-frames:v','1','-q:v','3',str(still)],check=True,timeout=30)
+                        subprocess.run(ff+['-map','0:v:0','-map','0:a?','-vf',"scale='min(1280,iw)':-2",'-c:v','libx264','-preset','fast','-crf','25','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(whole)],check=True,timeout=240)
+                        shutil.copyfile(hero,output);shutil.copyfile(still,poster);shutil.copyfile(whole,fullvideo)
+                        break
+                    except Exception as exc:
+                        print('::warning::Drone video candidate could not be processed:',type(exc).__name__)
+                else:raise ValueError('no playable local drone video')
+            print('Drone footage prepared:',output.stat().st_size,'bytes header clip')
+        except Exception as exc:
+            print('::warning::Drone header unavailable; existing photo slider retained:',str(exc)[:180])
+            return False
+    slides=source.select_one('.hero .slides')
+    script=next((x for x in source.find_all('script') if x.string and 'const slides=[...document.querySelectorAll' in x.string),None)
+    if not slides or not script:return False
+    video=source.new_tag('video',attrs={'class':'slide drone-slide','muted':'','playsinline':'','preload':'none','poster':'/media/ntc-drohnenflug-poster.jpg','aria-hidden':'true','data-src':'/media/ntc-drohnenflug-hero.mp4','loop':''})
+    # Video as first slide; keep all four original photos.
+    slides.insert(0,video)
+    for im in slides.select('img.slide'):im['class']=[c for c in im.get('class',[]) if c!='active']
+    video['class']=['slide','drone-slide','active']
+    source.head.style.append(".hero video.drone-slide{width:100%;height:100%;object-fit:cover;object-position:center;pointer-events:none}.hero .drone-slide.active{opacity:1}@media(prefers-reduced-motion:reduce){.hero .slide{transition:none}}")
+    script.string="""(()=>{const slides=[...document.querySelectorAll('.hero .slide')],labels=['Unser NTC aus der Vogelperspektive','Unsere Anlage','Unsere Tennishalle','Unser Vereinsleben','Gemeinschaft auf und neben dem Platz'];const topics=[['Tennis in Neuenhagen.','Unser Verein aus einer ganz neuen Perspektive.','Drohnenflug ansehen','/der-ntc-aus-der-vogelperspektive/'],['Tennis in Neuenhagen.','Sport, Gemeinschaft und Vereinsleben beim NTC 93.','Den Verein entdecken','/ueber-uns/'],['Tennis das ganze Jahr.','Unsere Tennishalle – auch im Winter auf dem Platz.','Zur Tennishalle','/tennishalle/'],['Gemeinsam auf dem Platz.','Von der Jugend bis zu den Seniorenteams.','Unsere Teams','/mannschaften/'],['Mehr als ein Verein.','Begegnungen auf und neben dem Tennisplatz.','Aktuelles aus dem NTC','/news/']];const reduced=matchMedia('(prefers-reduced-motion: reduce)'),saveData=!!navigator.connection?.saveData;let index=0,paused=reduced.matches,timer;const p=document.querySelector('#pause');function media(){slides.forEach((s,i)=>{if(s.tagName!=='VIDEO')return;s.pause();if(i===index&&!paused&&!document.hidden&&!saveData){s.muted=true;s.playsInline=true;if(!s.src)s.src=s.dataset.src;s.play().catch(()=>{})}})}function show(n){index=(n+slides.length)%slides.length;slides.forEach((s,i)=>{s.classList.toggle('active',i===index);s.setAttribute('aria-hidden',i===index?'false':'true')});document.querySelector('#count').textContent=String(index+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');document.querySelector('#photoCaption').textContent=labels[index];const t=topics[index];document.querySelector('#slideTitle').textContent=t[0];document.querySelector('#slideText').textContent=t[1];const a=document.querySelector('#slideLink');a.href=t[3];a.textContent=t[2]+' ↗';media()}function schedule(){clearTimeout(timer);media();if(!paused&&!document.hidden)timer=setTimeout(()=>{show(index+1);schedule()},slides[index].tagName==='VIDEO'?16000:6500)}function updatePause(){p.textContent=paused?'▶':'Ⅱ';p.setAttribute('aria-pressed',String(paused));p.setAttribute('aria-label',paused?'Bildwechsel fortsetzen':'Bildwechsel pausieren');schedule()}document.querySelector('#prev').onclick=()=>{show(index-1);schedule()};document.querySelector('#next').onclick=()=>{show(index+1);schedule()};p.onclick=()=>{paused=!paused;updatePause()};document.addEventListener('visibilitychange',schedule);show(reduced.matches||saveData?1:0);updatePause()})();"""
+    return True
+DRONE_AVAILABLE=integrate_drone_hero(source)
+
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
 
 # Club calendar fallback stays usable even before the CMS database is available.
@@ -708,6 +781,9 @@ def layout_detail(path,title,node,url,body,sidebar,original):
         date,img,_=postmeta[path]
         top='<div class="article-heading"><a class="detail-textlink" href="/news/">← Alle Nachrichten</a>'+('<p class="article-date">'+E(date)+'</p>' if date else '')+'<h1>'+E(title)+'</h1></div>'
         lead,article,gallery=news_picture_layout(clean,img,postphotos.get(path,[]),title)
+        if path=='/der-ntc-aus-der-vogelperspektive/' and DRONE_AVAILABLE:
+            lead='<figure class="article-featured"><video controls playsinline preload="metadata" poster="/media/ntc-drohnenflug-poster.jpg" style="display:block;width:100%;height:auto;max-height:650px" src="/media/ntc-drohnenflug-original.mp4"></video></figure>'
+
         return crumb+top+'<div class="article-reading">'+lead+'<article class="content article-content">'+article+original+'</article>'+gallery+'</div>'
     # Information and service pages have a quiet title and readable content, not a generic giant hero.
     top=masthead(title,area if area.casefold()!=title.casefold() else 'Neuenhagener TC 93')
