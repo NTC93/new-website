@@ -243,7 +243,7 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
-local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/gastronomie/','/'))
+local.update(('/news/','/termine/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/gastronomie/','/'))
 if len(local)<12: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
@@ -256,7 +256,7 @@ def rewrite(soup):
 rewrite(source)
 # Shared navigation: retain the original destinations, prefer migrated pages.
 def nav_target(label, fallback=''):
-    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/','/gastronomie/'):
+    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/','/gastronomie/','/termine/'):
         return fallback
     wanted=' '.join(label.casefold().split())
     for a in home.select('li.menu-item a[href], nav a[href]')+home.select('a[href]'):
@@ -423,6 +423,26 @@ SPONSOR_CSS="""
 """
 source.head.style.append(SPONSOR_CSS)
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
+
+# Club calendar fallback stays usable even before the CMS database is available.
+def club_event_list(compact=False):
+    items=[
+      ('2026-12-06','06','Dez','NTC-Geburtstagsbrunch','11:00–15:00 Uhr · Clubhaus NTC 93','Brunchbuffet für 20 € pro Person inklusive Sektempfang. Anmeldung mit Personenzahl an info@ntc93.de.','/33-jahre-ntc-und-ein-brunch-zum-anstossen/',''),
+      ('2026-12-19','19','Dez','Arbeitseinsatz Tennishalle','Tennishalle NTC 93 · Uhrzeit noch offen','Die endgültige Bestätigung und Uhrzeit stehen noch aus.','/fit-fuer-den-winter-unsere-halle-ist-bereit/','Voraussichtlich'),
+    ]
+    rows=[]
+    for date,day,month,title,meta,body,link,status in items:
+        rows.append('<article class="club-event" data-event-date="'+date+'"><div class="club-event-date"><strong>'+day+'</strong><span>'+month+' 2026</span></div><div class="club-event-copy"><h3>'+html.escape(title)+'</h3>'+('<span class="club-event-status">'+status+'</span>' if status else '')+'<p class="club-event-meta">'+html.escape(meta)+'</p>'+('' if compact else '<p>'+html.escape(body)+'</p>')+'<a href="'+link+'">Details →</a></div></article>')
+    return '<div class="club-event-list" data-club-events="'+('compact' if compact else 'full')+'">'+''.join(rows)+'</div>'
+club_events_css="""
+.club-events-home{max-width:1320px;margin:0 auto;padding:18px clamp(20px,5vw,68px) 25px}.club-events-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line,#dce5df);padding-bottom:10px;margin-bottom:12px}.club-events-heading h2{font-size:clamp(22px,2.4vw,30px);margin:3px 0 0;letter-spacing:-.03em;line-height:1.15}.club-event-list{display:grid;gap:0}.club-event{display:grid;grid-template-columns:74px minmax(0,1fr);gap:17px;padding:15px 0;border-bottom:1px solid var(--line,#dce5df);align-items:start}.club-event-date{min-height:70px;padding:8px 5px;text-align:center;background:#e8f0ea;color:#155d4b;border-radius:4px;display:grid;align-content:center;gap:3px}.club-event-date strong{font-size:28px;line-height:1}.club-event-date span{font-size:11px;font-weight:650}.club-event-copy h3{margin:0 0 4px;font-size:17px;line-height:1.3}.club-event-copy p{font-size:14px;line-height:1.5;margin:5px 0}.club-event-copy p.club-event-meta{font-size:12px;color:var(--muted,#61776d)}.club-event-copy a{font-size:13px;font-weight:700;color:var(--green,#146143);display:inline-block;margin-top:3px}.club-event-status{font-size:11px;font-weight:650;color:#80621c;background:#f5efd9;padding:2px 6px;border-radius:3px}.club-event-list[data-club-events=compact]{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.club-event-list[data-club-events=compact] .club-event{grid-template-columns:60px minmax(0,1fr);gap:12px;padding:8px 0}.club-event-list[data-club-events=compact] .club-event-date{min-height:61px}.club-event-list[data-club-events=compact] .club-event-copy h3{font-size:15px}.club-event-page{max-width:1020px;margin:0 auto}.club-event-page .club-event-list{margin:24px 0}.club-event-empty{color:var(--muted,#61776d);font-size:14px;padding:14px 0}.club-event-foot{font-size:14px;color:var(--muted,#61776d);margin:24px 0}@media(max-width:680px){.club-event-list[data-club-events=compact]{grid-template-columns:1fr;gap:6px}.club-event{grid-template-columns:64px minmax(0,1fr);gap:12px}.club-events-heading{align-items:center}}
+"""
+source.head.style.append(club_events_css)
+event_section=BeautifulSoup('<section class="club-events-home"><div class="club-events-heading"><div><div class="eyebrow section-label">Vereinsleben</div><h2>Nächste Termine</h2></div><a class="textlink" href="/termine/">Alle Termine →</a></div>'+club_event_list(True)+'</section>','html.parser')
+news_section=source.select_one('.home-layout')
+if news_section:news_section.insert_after(event_section)
+else:source.main.append(event_section)
+
 # Shared contact and arrival links.
 footlinks=source.select_one('.footlinks')
 if footlinks and not footlinks.find('a',href='/anfahrt/'):
@@ -682,7 +702,7 @@ def layout_detail(path,title,node,url,body,sidebar,original):
 
 for path,(title,node,url,err) in loaded.items():
     if node is None: print('SKIPPED',path,err); continue
-    if path=='/news/': continue
+    if path in ('/news/','/termine/'): continue
     body=sanitize(node,url,local)
     sidebar=related(path)
     if path in postmeta:
@@ -809,6 +829,13 @@ h=copy.deepcopy(head);h.title.string='Gastronomie – Trattoria Due Fratelli | N
 h.style.append(gastro_css)
 out=ROOT/'gastronomie/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page gastro-page">'+gastro_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+
+
+# Dedicated event calendar, no dependence on legacy calendar widgets.
+h=copy.deepcopy(head);h.title.string='Termine | NTC 93'
+event_page='<div class="club-event-page"><div class="breadcrumbs"><a href="/">Startseite</a> › Termine</div>'+masthead('Termine','Vereinsleben','Die kommenden Veranstaltungen und Termine unseres Tennisclubs.')+club_event_list()+'<p class="club-event-foot">Die Punktspieltermine findest du im <a class="textlink" href="/matchcenter/">Matchcenter →</a>.</p></div>'
+out=ROOT/'termine/index.html';out.parent.mkdir(parents=True,exist_ok=True)
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_page+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
 migration=localize(ROOT)
