@@ -14,6 +14,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       FTP_SERVER: ${{ secrets.FTP_SERVER }}
       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -77,6 +78,7 @@ jobs:
           name: migration-report
           path: site/migration-report.json
       - name: Verify isolated FTPS target and publish preview
+        timeout-minutes: 30
         env:
           CMS_DB_HOST: ${{ secrets.CMS_DB_HOST }}
           CMS_DB_NAME: ${{ secrets.CMS_DB_NAME }}
@@ -101,13 +103,63 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
             upload site/matches.json matches.json
             status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/matches.txt" --write-out '%{http_code}' "https://neu.ntc93.de/matches.json?run=$GITHUB_RUN_ID")
-            [[ "$status" == 200 ]] && cmp -s site/matches.json "$RUNNER_TEMP/matches.txt"
+            [[ "$status" == 200 ]] && cmp -s site/matches.json "$RUNNER_TEMP/matches.txt" || { echo "Match data verification failed"; exit 1; }
             echo 'Match data refreshed and verified.'
             exit 0
           fi
-          while IFS= read -r -d '' f; do
-            upload "$f" "${f#site/}"
-          done < <(find site -type f ! -path site/index.html ! -path site/migration-report.json -print0)
+          # Protect the private directory first, even on a new installation.
+          upload site/admin/private/.htaccess admin/private/.htaccess
+          # Compare content hashes from the last successful deployment. This
+          # manifest contains public website file hashes only, never secrets.
+          curl --fail --silent --show-error --max-time 25 \
+            "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID" \
+            -o "$RUNNER_TEMP/previous-manifest.json" || rm -f "$RUNNER_TEMP/previous-manifest.json"
+          # Invalidate the previous manifest before any files are changed.
+          # A failed or interrupted deployment will therefore be retried in full.
+          printf '%s' '{}' > "$RUNNER_TEMP/invalid-manifest.json"
+          upload "$RUNNER_TEMP/invalid-manifest.json" ntc-deploy-manifest.json
+          python3 -u - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          from urllib.parse import quote
+          root=pathlib.Path('site')
+          tmp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          try:
+              old=json.loads((tmp/'previous-manifest.json').read_text())
+              if not isinstance(old,dict): old={}
+          except (OSError,ValueError):
+              old={}
+          files={}
+          for p in sorted(root.rglob('*')):
+              if not p.is_file(): continue
+              rel=p.relative_to(root).as_posix()
+              if rel in ('index.html','migration-report.json','matches.json','ntc-deploy-manifest.json') or rel.startswith('admin/private/'):
+                  continue
+              files[rel]=hashlib.sha256(p.read_bytes()).hexdigest()
+          changed=[p for p,h in files.items() if old.get(p)!=h]
+          print(f'Upload plan: {len(changed)} changed files; {len(files)-len(changed)} unchanged; {len(files)} total',flush=True)
+          # A curl invocation can reuse FTPS connections between transfers.
+          # Use small batches and modest parallelism to avoid overloading shared hosting.
+          credentials=os.environ['FTP_USERNAME']+':'+os.environ['FTP_PASSWORD']
+          server=os.environ['FTP_SERVER']
+          for offset in range(0,len(changed),30):
+              batch=changed[offset:offset+30]
+              args=['curl','--parallel','--parallel-max','3','--fail-early']
+              for i,rel in enumerate(batch):
+                  if i: args.append('--next')
+                  args.extend(['--fail','--silent','--show-error','--ssl-reqd','--ftp-create-dirs',
+                               '--connect-timeout','20','--max-time','90',
+                               '--user',credentials,'--upload-file',str(root/rel),
+                               'ftp://'+server+'/'+quote(rel,safe='/')])
+              result=subprocess.run(args)
+              if result.returncode:
+                  raise SystemExit('FTPS batch failed; deployment manifest remains invalid')
+              print(f'Uploaded {offset+len(batch)}/{len(changed)} changed files',flush=True)
+          (tmp/'next-manifest.json').write_text(json.dumps(files,separators=(',',':')))
+          PY
+          # Match data is updated independently of the website manifest.
+          if [[ -f site/matches.json ]]; then
+            upload site/matches.json matches.json
+          fi
           if [[ -n "$CMS_DB_NAME" && -n "$CMS_DB_USER" && -n "$CMS_DB_PASSWORD" && ${#CMS_SETUP_TOKEN} -ge 32 ]]; then
             # Verify Apache blocks the private config directory before provisioning credentials.
             upload site/admin/private/.htaccess admin/private/.htaccess
@@ -128,5 +180,10 @@ jobs:
           curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/anfahrt/' -o "$RUNNER_TEMP/arrival.html"
           cmp -s site/anfahrt/index.html "$RUNNER_TEMP/arrival.html"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
-          [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt"
+          [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt" || { echo "Homepage verification failed"; exit 1; }
+          upload "$RUNNER_TEMP/next-manifest.json" ntc-deploy-manifest.json
+          curl --fail --silent --show-error --max-time 30 \
+            "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID" \
+            -o "$RUNNER_TEMP/verified-manifest.json"
+          cmp -s "$RUNNER_TEMP/next-manifest.json" "$RUNNER_TEMP/verified-manifest.json"
           echo 'Preview deployed and verified.'
