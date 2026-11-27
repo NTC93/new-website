@@ -77,9 +77,23 @@ jobs:
         if: github.event_name != 'schedule'
         uses: actions/cache/restore@v4
         with:
-          path: site/media/import
+          path: |
+            site/media/import
+            site/media/ntc-drohnenflug-hero.mp4
+            site/media/ntc-drohnenflug-poster.jpg
+            site/media/ntc-drohnenflug-original.mp4
           key: ntc-public-media-${{ github.run_id }}
           restore-keys: ntc-public-media-
+      - name: Ensure FFmpeg for local drone video conversion
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | sed -n '1p'
       - name: Build public subpages
         if: github.event_name != 'schedule'
         run: python3 tools/import_pages.py
@@ -87,7 +101,11 @@ jobs:
         if: github.event_name != 'schedule'
         uses: actions/cache/save@v4
         with:
-          path: site/media/import
+          path: |
+            site/media/import
+            site/media/ntc-drohnenflug-hero.mp4
+            site/media/ntc-drohnenflug-poster.jpg
+            site/media/ntc-drohnenflug-original.mp4
           key: ntc-public-media-${{ github.run_id }}
       - name: Prepare private CMS content import
         if: github.event_name != 'schedule'
@@ -240,6 +258,12 @@ jobs:
           # Verify the news page was uploaded, not just the homepage.
           curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/news/' -o "$RUNNER_TEMP/news.html"
           cmp -s site/news/index.html "$RUNNER_TEMP/news.html"
+          # If the build prepared a drone video, verify the deployed media.
+          if [[ -f site/media/ntc-drohnenflug-hero.mp4 ]]; then
+            curl --fail --silent --show-error --max-time 60 "https://neu.ntc93.de/media/ntc-drohnenflug-hero.mp4?run=$GITHUB_RUN_ID" -o "$RUNNER_TEMP/drone-hero.mp4"
+            cmp -s site/media/ntc-drohnenflug-hero.mp4 "$RUNNER_TEMP/drone-hero.mp4"
+            echo 'Drone hero video uploaded and verified.'
+          fi
           curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/anfahrt/' -o "$RUNNER_TEMP/arrival.html"
           cmp -s site/anfahrt/index.html "$RUNNER_TEMP/arrival.html"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
