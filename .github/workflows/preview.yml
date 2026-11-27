@@ -58,6 +58,8 @@ jobs:
         if: github.event_name != 'schedule'
         run: |
           php -l site/admin/index.php
+          php -l site/admin/import-content.php
+          python3 -m py_compile tools/export_cms.py
           node --check site/cms-public.js
           node --check site/club-enhancements.js
           python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
@@ -77,6 +79,9 @@ jobs:
         with:
           path: site/media/import
           key: ntc-public-media-${{ github.run_id }}
+      - name: Prepare private CMS content import
+        if: github.event_name != 'schedule'
+        run: python3 tools/export_cms.py
       - name: Save archive migration report
         if: github.event_name != 'schedule'
         uses: actions/upload-artifact@v4
@@ -117,6 +122,7 @@ jobs:
           upload site/admin/private/.htaccess admin/private/.htaccess
           # Provision the administration application before the large public-site upload.
           upload site/admin/admin.css admin/admin.css
+          upload site/admin/import-content.php admin/import-content.php
           upload site/admin/index.php admin/index.php
           if [[ -n "$CMS_DB_NAME" && -n "$CMS_DB_USER" && -n "$CMS_DB_PASSWORD" && ${#CMS_SETUP_TOKEN} -ge 32 ]]; then
             # Verify Apache blocks the private config directory before provisioning credentials.
@@ -217,6 +223,12 @@ jobs:
           cmp -s site/anfahrt/index.html "$RUNNER_TEMP/arrival.html"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
           [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt" || { echo "Homepage verification failed"; exit 1; }
+          # Deliver the private import only after all referenced public files are present.
+          printf '%s' 'private directory test' > "$RUNNER_TEMP/private-check.txt"
+          upload "$RUNNER_TEMP/private-check.txt" admin/private/private-check.txt
+          status=$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' "https://neu.ntc93.de/admin/private/private-check.txt?run=$GITHUB_RUN_ID")
+          [[ "$status" == 403 ]] || { echo 'Private directory not protected; CMS content seed not uploaded.'; exit 1; }
+          upload site/admin/private/content-seed.json admin/private/content-seed.json
           upload "$RUNNER_TEMP/next-manifest.json" ntc-deploy-manifest.json
           curl --fail --silent --show-error --max-time 30 \
             "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID" \
