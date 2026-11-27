@@ -171,7 +171,7 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
-local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/'))
+local.update(('/news/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/'))
 if len(local)<12: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
@@ -184,7 +184,7 @@ def rewrite(soup):
 rewrite(source)
 # Shared navigation: retain the original destinations, prefer migrated pages.
 def nav_target(label, fallback=''):
-    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/'):
+    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/'):
         return fallback
     wanted=' '.join(label.casefold().split())
     for a in home.select('li.menu-item a[href], nav a[href]')+home.select('a[href]'):
@@ -254,7 +254,7 @@ def build_nav(source):
             if count:d.append(sect)
         if d.contents:g.append(d);nav.append(g)
     group('Aktuelles',[('',[('Nachrichten','News','/news/'),('Termine','Termine','/termine/'),('NTC Tennis App','NTC Tennis App',''),('TVBB Spielergebnisse','TVBB Spielergebnisse','')])])
-    group('Verein',[('Über den NTC',[('Unser Verein','Über uns','/ueber-uns/'),('Vorstand','Vorstand','/vorstand/'),('Trainer','Trainer','/trainer/'),('Ehrenmitglieder','Ehrenmitglieder','/ehrenmitglieder/'),('Gastronomie','Gastronomie','')]),('Organisation & Partner',[('Sponsoren','Sponsoren','/sponsoren/'),('Sponsor werden','Sponsor werden','/sponsor-werden/'),('Satzung','Satzung',''),('NTC-Informationen','NTC-Informationen',''),('Platzordnung','Platzordnung',''),('Arbeitskarte','Arbeitskarte','')])],True)
+    group('Verein',[('Über den NTC',[('Unser Verein','Über uns','/ueber-uns/'),('Vorstand','Vorstand','/vorstand/'),('Trainer','Trainer','/trainer/'),('Ehrenmitglieder','Ehrenmitglieder','/ehrenmitglieder/'),('Gastronomie','Gastronomie',''),('Anfahrt & Kontakt','Anfahrt','/anfahrt/')]),('Organisation & Partner',[('Sponsoren','Sponsoren','/sponsoren/'),('Sponsor werden','Sponsor werden','/sponsor-werden/'),('Satzung','Satzung',''),('NTC-Informationen','NTC-Informationen',''),('Platzordnung','Platzordnung',''),('Arbeitskarte','Arbeitskarte','')])],True)
     group('Teams',[('',[('Mannschaften im Überblick','Teams','/mannschaften/'),('Damen','Damen',''),('Herren','Herren',''),('Seniorinnen','Seniorinnen',''),('Senioren','Senioren',''),('Jugendteams','Jugendteams','')])])
     link('Matchcenter','/matchcenter/',nav)
     group('Jugend',[('Training',[('Jugend im Überblick','Jugend','/jugend/'),('Trainingskonzept','Trainingskonzept',''),('Teamsporttraining','Teamsporttraining',''),('Breitensporttraining','Breitensporttraining',''),('Minitennis','Minitennis',''),('Förderungskonzept','Förderungskonzept','')]),('Mannschaften',[('Jugendteams','Jugendteams',''),('Juniorinnen 15–18','Juniorinnen 15-18',''),('Junioren 15–18','Junioren 15-18',''),('Mixed Teams 10–12','Mixed Teams 10-12','')]),('Jugend-Angebote',[('Feriencamps','Feriencamps',''),('Turniere','Turniere',''),('Konditionstraining','Konditionstraining',''),('Workshops','Workshops',''),('Matchpraxis','Matchpraxis',''),('Jugend trainiert für Olympia','Jugend trainiert für Olympia',''),('Interne Rangliste','Interne Rangliste','')])],True)
@@ -345,12 +345,31 @@ def sponsor_tiles():
     return ''.join(result)
 def sponsor_band():
     logos=sponsor_tiles()
-    return '<section class="sponsor-band" aria-labelledby="sponsor-title"><div class="sponsor-head"><div><div class="section-kicker">Gemeinsam für den NTC</div><h2 id="sponsor-title">Unsere Sponsoren & Partner</h2></div><a class="sponsor-link" href="/sponsoren/">Alle Sponsoren →</a></div>'+('<div class="sponsor-track">'+logos+'</div>' if logos else '<p>Wir danken allen Partnern für ihre Unterstützung.</p>')+'</section>'
+    return '<section class="sponsor-band" aria-labelledby="sponsor-title"><div class="sponsor-head"><div><div class="section-kicker">Gemeinsam für den NTC</div><h2 id="sponsor-title">Unsere Sponsoren & Partner</h2></div><div class="sponsor-head-actions"><div class="sponsor-controls" aria-label="Sponsorenleiste steuern"><button type="button" data-sponsor-prev aria-label="Vorherige Logos" hidden>←</button><button type="button" data-sponsor-pause aria-label="Automatischen Logowechsel pausieren" aria-pressed="false" hidden>Ⅱ</button><button type="button" data-sponsor-next aria-label="Weitere Logos" hidden>→</button></div><a class="sponsor-link" href="/sponsoren/">Alle Sponsoren →</a></div></div>'+('<div class="sponsor-track" tabindex="0" aria-label="Sponsorenlogos, horizontal scrollbar">'+logos+'</div>')+('' if logos else '<p>Wir danken allen Partnern für ihre Unterstützung.</p>')+'</section>'
 SPONSOR_CSS="""
 .sponsor-band{max-width:1320px;margin:0 auto;padding:24px clamp(20px,5vw,68px) 42px}.sponsor-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:16px}.sponsor-head h2{font-size:clamp(21px,2.4vw,29px);margin:5px 0;color:#183c2b;letter-spacing:-.03em}.sponsor-link{font-weight:650;color:#146143;font-size:13px;white-space:nowrap}.sponsor-track{display:flex;gap:12px;overflow-x:auto;padding:4px 1px 12px;scroll-snap-type:x proximity}.sponsor-logo{flex:0 0 150px;min-width:0;min-height:88px;background:white;border:1px solid #e1e9e2;border-radius:9px;display:grid;place-items:center;padding:15px;scroll-snap-align:start}.sponsor-logo img{width:100%;height:62px;object-fit:contain}.sponsor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:26px 0 35px}.sponsor-grid .sponsor-logo{min-height:120px}.sponsor-grid .sponsor-logo img{height:83px}@media(max-width:540px){.sponsor-logo{flex-basis:125px;min-height:75px;padding:12px}.sponsor-logo img{height:50px}.sponsor-head{align-items:flex-start;flex-direction:column;gap:4px}}
 """
 source.head.style.append(SPONSOR_CSS)
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
+# Shared contact and arrival links.
+footlinks=source.select_one('.footlinks')
+if footlinks and not footlinks.find('a',href='/anfahrt/'):
+    a=source.new_tag('a',href='/anfahrt/');a.string='Anfahrt & Kontakt'
+    old=footlinks.find('a',href='mailto:info@ntc93.de')
+    if old: old.replace_with(a)
+    else: footlinks.insert(0,a)
+    mail=source.new_tag('a',href='mailto:info@ntc93.de');mail.string='E-Mail'
+    footlinks.insert(1,mail)
+foot_address=source.select_one('.foot p')
+if foot_address:
+    for text_node in list(foot_address.find_all(string=True)):
+        if 'Hildesheimer Straße' in str(text_node):
+            a=source.new_tag('a',href='/anfahrt/',attrs={'class':'foot-address-link'})
+            a.string=str(text_node).strip()
+            text_node.replace_with(a)
+source.head.append(source.new_tag('link',attrs={'rel':'stylesheet','href':'/club-enhancements.css'}))
+source.head.append(source.new_tag('script',attrs={'src':'/club-enhancements.js','defer':''}))
+
 
 # Shared header and sponsor section for staging pages.
 # Published content is loaded independently from the generated site.
@@ -588,6 +607,44 @@ out=ROOT/'sponsoren/index.html';out.parent.mkdir(parents=True,exist_ok=True);out
 h=copy.deepcopy(head);h.title.string='Nachricht | NTC 93'
 out=ROOT/'redaktion/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page"><div class="breadcrumbs"><a href="/">Startseite</a> / <a href="/news/">Aktuelles</a></div><article id="cms-article" class="cms-article"><p>Nachricht wird geladen …</p></article></main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+# Directions page: use only the verified postal address and club contact.
+from urllib.parse import quote
+destination='Neuenhagener TC 93 e.V., Hildesheimer Straße 11-13, 15366 Neuenhagen bei Berlin, Deutschland'
+dest=quote(destination,safe='')
+def directions(mode):
+    return 'https://www.google.com/maps/dir/?api=1&amp;destination='+dest+'&amp;travelmode='+mode
+map_url='https://www.google.com/maps/search/?api=1&amp;query='+dest
+arrival_content='''
+<div class="breadcrumbs"><a href="/">Startseite</a> <span aria-hidden="true">›</span> Anfahrt &amp; Kontakt</div>
+<div class="detail-mast"><div class="detail-mast-copy"><div class="detail-kicker">So findest du uns</div><h1>Anfahrt &amp; Kontakt</h1><p>Willkommen auf unserer Tennisanlage in Neuenhagen bei Berlin.</p></div></div>
+<div class="arrival-grid">
+  <div class="arrival-map" data-map-mount>
+    <div class="arrival-map-card">
+      <svg class="arrival-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></svg>
+      <h2>Hier findest du den NTC 93</h2><p>Hildesheimer Straße 11–13<br>15366 Neuenhagen bei Berlin</p>
+      <button class="detail-action" type="button" data-load-map>Karte anzeigen</button>
+      <small>Beim Anzeigen der Karte wird eine Verbindung zu Google Maps hergestellt.</small>
+      <noscript><p>Bitte nutze die Routenlinks unterhalb der Karte.</p></noscript>
+    </div>
+  </div>
+  <div class="arrival-info">
+    <div class="detail-kicker">Unsere Vereinsanlage</div>
+    <h2>Neuenhagener Tennisclub 93 e. V.</h2>
+    <address class="arrival-address">Hildesheimer Straße 11–13<br>15366 Neuenhagen bei Berlin</address>
+    <div class="arrival-contact"><a href="tel:+493342203823">03342 203823</a><a href="mailto:info@ntc93.de">info@ntc93.de</a></div>
+    <div><a class="detail-action" href="'''+map_url+'''">In Google Maps öffnen ↗</a></div>
+  </div>
+</div>
+<section class="detail-section"><h2>Deine Anreise</h2><div class="arrival-routes">
+  <div class="arrival-route"><h3>Mit dem Auto</h3><p>Route von deinem Startpunkt bis zur Tennisanlage planen.</p><a href="'''+directions('driving')+'''">Autoroute starten ↗</a></div>
+  <div class="arrival-route"><h3>Mit Bus &amp; Bahn</h3><p>Verbindungen mit dem öffentlichen Nahverkehr inklusive Fußweg zur Anlage anzeigen.</p><a href="'''+directions('transit')+'''">ÖPNV-Verbindung suchen ↗</a></div>
+  <div class="arrival-route"><h3>Mit dem Fahrrad</h3><p>Die passende Fahrradroute zur Hildesheimer Straße finden.</p><a href="'''+directions('bicycling')+'''">Fahrradroute planen ↗</a></div>
+</div></section>
+'''
+h=copy.deepcopy(head);h.title.string='Anfahrt & Kontakt | NTC 93'
+out=ROOT/'anfahrt/index.html';out.parent.mkdir(parents=True,exist_ok=True)
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page arrival-page">'+arrival_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
 migration=localize(ROOT)
 archive_report['discovered']=len(NEWS)
