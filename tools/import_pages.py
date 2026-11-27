@@ -61,6 +61,10 @@ for a in home.select('a[href]'):
 for p in ['/damen-ii-mit-starkem-remis-herren-30-souveraen/','/grosse-ehre-fuer-gabi-faika/','/erster-aufschlag-fuer-die-wintersaison/']:
     pages.setdefault(p,'')
 
+# Explicitly verified recent article URLs also serve as fallback.
+NEWS = [["/damen-ii-mit-starkem-remis-herren-30-souveraen/","Damen II mit starkem Remis, Herren 30 souverän","19.11.2026"],["/grosse-ehre-fuer-gabi-faika/","Große Ehre für Gabi Faika","15.11.2026"],["/erster-aufschlag-fuer-die-wintersaison/","Erster Aufschlag für die Wintersaison","09.11.2026"],["/gemeinsam-fuer-unseren-neuen-kinderspielplatz-jetzt-abstimmen/","Gemeinsam für unseren neuen Kinderspielplatz: Jetzt abstimmen!","04.11.2026"],["/das-fazit-faellt-positiv-aus/","„Das Fazit fällt positiv aus“","22.10.2026"],["/clubmeisterschaften-ntc-nachwuchs-im-wettkampffieber/","NTC-Nachwuchs im Wettkampffieber",""],["/33-jahre-ntc-und-ein-brunch-zum-anstossen/","33 Jahre NTC – und ein Brunch zum Anstoßen",""],["/19-jahre-fuer-die-1-herren-danke-benny/","19 Jahre für die 1. Herren: Danke, Benny!",""],["/u10-midcourt-matchpraxis-startet-in-die-wintersaison/","U10-Midcourt: Matchpraxis startet in die Wintersaison",""],["/damen-65-einladungsturnier-eine-tradition-die-verbindet/","Damen 65: Einladungsturnier mit Tradition",""]]
+for p,title,date in NEWS:
+    pages[p]=title
 # Prefer the actual content area; do not copy WP theme, navigation or scripts.
 def extract(soup):
     for selector in ('main .entry-content','main .elementor[data-elementor-type="wp-page"]','main .elementor[data-elementor-type="wp-post"]','.entry-content','[data-elementor-type="wp-page"]','[data-elementor-type="wp-post"]','main','#content'):
@@ -104,6 +108,7 @@ def sanitize(node, url, local):
         if tag.name=='h1': tag.name='h2'
     return ''.join(str(x) for x in node.contents)
 
+postmeta = {}
 def load(item):
     path,label=item
     try:
@@ -113,6 +118,33 @@ def load(item):
         title=soup.select_one('main h1, .entry-title, h1')
         actual=' '.join(title.stripped_strings) if title else ''
         title=label or actual or (soup.title.get_text(strip=True).split(' – ')[0] if soup.title else path.strip('/'))
+        if path in {p for p,_,_ in NEWS}:
+            meta=soup.select_one('meta[property="article:published_time"], meta[itemprop="datePublished"]')
+            date=''
+            if meta and meta.get('content'):
+                m=re.match(r'(\d{4})-(\d{2})-(\d{2})',meta['content'])
+                if m: date='.'.join(reversed(m.groups()))
+            if not date:
+                for t in soup.select('time, .elementor-post-info__item--type-date, .entry-date, .posted-on'):
+                    m=re.search(r'\b\d{1,2}\.\d{1,2}\.\d{4}\b',t.get_text(' ',strip=True))
+                    if m: date=m.group(); break
+            if not date:
+                m=re.search(r'\b\d{1,2}\.\d{1,2}\.\d{4}\b',node.get_text(' ',strip=True))
+                if m: date=m.group()
+            image=soup.select_one('meta[property="og:image"]')
+            image=image.get('content','') if image else ''
+            if not image:
+                im=node.select_one('img')
+                image=(im.get('data-src') or im.get('src','')) if im else ''
+            image=urljoin(url,image) if image else ''
+            if urlsplit(image).scheme not in ('http','https'): image=''
+            paras=[' '.join(p.stripped_strings) for p in node.select('p')]
+            teaser=next((p for p in paras if len(p)>65),'')
+            if not teaser:
+                desc=soup.select_one('meta[name="description"],meta[property="og:description"]')
+                teaser=desc.get('content','') if desc else ''
+            if len(teaser)>145: teaser=teaser[:145].rsplit(' ',1)[0]+' …'
+            postmeta[path]=(date,image,teaser)
         return path,(title,node,url,None)
     except Exception as e:
         return path,(label or path.strip('/'),None,urljoin(BASE,path),str(e))
@@ -123,6 +155,7 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
+local.add('/news/')
 if len(local)<8: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
@@ -133,6 +166,7 @@ def rewrite(soup):
     for im in soup.select('img[src]'):
         if im['src'].startswith('media/'): im['src']='/'+im['src']
 rewrite(source)
+source.head.style.append("\n/* Editorial refinement: quiet structure, distinct identity, no extra homepage sections. */\n:root{--ink:#172e2c;--green:#006668;--yellow:#f6d525;--paper:#f6f7f3;--line:#dce4df}\nbody{font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;font-size:15px}\nbody>header{border-top:4px solid var(--green);box-shadow:0 2px 12px #172e2c0a}\n.nav{max-width:1370px;padding-top:12px;padding-bottom:12px;gap:22px}\n.brand img{width:53px;height:53px;object-fit:contain}.brand strong{font-size:21px;letter-spacing:-.04em}.brand small{font-size:9px}\n.navlinks{font-size:13px;gap:clamp(12px,1.8vw,28px)}.booking{border-radius:4px;font-size:13px;padding:12px 16px}\n.hero h1{font-size:clamp(48px,6.3vw,90px);letter-spacing:-.055em;font-weight:720}\n.hero .eyebrow{letter-spacing:.13em}.hero-controls button{border-radius:4px}\n.quick{border-bottom:1px solid var(--line);box-shadow:0 3px 12px #172e2c05}\n.quick-inner{padding-top:0;padding-bottom:0;gap:0}.quick a{padding:18px 22px;flex:1;justify-content:center;border-right:1px solid var(--line)}.quick a:last-child{border:0}.quick a:hover{background:#edf4ef;color:var(--green)}\n.intro{padding:57px 0 52px;align-items:center;gap:clamp(24px,6vw,88px)}.intro h2{font-size:clamp(30px,3.8vw,49px);letter-spacing:-.045em}.intro p{font-size:16px}\n.section-label{font-size:11px;letter-spacing:.13em;margin-bottom:12px}.news{padding:42px 0 56px}.news h2{font-size:clamp(28px,3vw,38px)}.sectionhead{margin-bottom:20px}.newsrow{padding:17px 0;grid-template-columns:110px 1fr 24px}.newsrow strong{font-size:17px;letter-spacing:-.01em}.arrow{font-size:19px}\nfooter{border-top:3px solid var(--green)}.foot{padding-top:28px;padding-bottom:28px}\n@media(max-width:1100px){.brand small{display:none}.nav{gap:12px}.navlinks{gap:13px}}\n@media(max-width:920px){.nav{padding:12px 20px}.menu{display:block;margin-left:auto;border-radius:4px}.navlinks{display:none;position:absolute;top:100%;left:0;right:0;background:white;flex-direction:column;align-items:stretch;padding:16px 24px 24px;border-top:1px solid var(--line)}.navlinks.open{display:flex}.navlinks a{padding:10px 0}}\n@media(max-width:800px){.hero h1{font-size:clamp(43px,8.5vw,68px)}.quick a{flex:0 0 50%;min-width:0;padding:13px 10px;justify-content:space-between;font-size:12px;border-bottom:1px solid var(--line)}.quick a:nth-child(2n){border-right:0}.intro{padding:38px 0;gap:18px}.news{padding:33px 0 42px}.newsrow{grid-template-columns:1fr 25px;gap:4px 10px;padding:13px 0}}\n")
 # Add a members link without changing the existing main navigation hierarchy.
 nav=source.select_one('#nav')
 if nav and '/mitglieder/' in local and not nav.find('a',href='/mitglieder/'):
@@ -151,7 +185,7 @@ def related(path):
     return '<aside class="section-nav" aria-label="Weitere Seiten"><h2>In diesem Bereich</h2>'+''.join(links)+'</aside>' if links else ''
 
 css="""
-.subpage{max-width:1320px;margin:auto;padding:44px clamp(20px,5vw,68px) 80px;min-height:60vh}.breadcrumbs{font-size:13px;color:#62726d;margin-bottom:32px}.breadcrumbs a{text-decoration:underline;text-underline-offset:3px}.pagetitle{font-size:clamp(42px,6vw,80px);letter-spacing:-.06em;line-height:1.04;margin:0 0 34px}.subgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,270px);gap:clamp(28px,5vw,80px);align-items:start}.subgrid.solo{grid-template-columns:minmax(0,900px)}.content{min-width:0;font-size:17px;line-height:1.65;overflow-wrap:anywhere}.content h2{font-size:clamp(25px,3vw,40px);line-height:1.15;letter-spacing:-.035em;margin:40px 0 15px}.content h3{font-size:24px;line-height:1.25;margin:28px 0 12px}.content h4,.content h5,.content h6{font-size:19px;margin:22px 0 8px}.content p{margin:0 0 18px}.content a{color:var(--green);text-decoration:underline;text-underline-offset:3px}.content img{max-width:100%;width:auto;height:auto;display:block;margin:18px 0;object-fit:contain;max-height:560px}.content figure{margin:22px 0}.content figcaption{font-size:13px;color:#62726d}.content table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto;margin:20px 0}.content td,.content th{padding:10px 14px;border:1px solid var(--line);text-align:left}.content th{background:#e8efeb}.content ul,.content ol{padding-left:24px}.section-nav{border-top:3px solid var(--green);padding-top:14px}.section-nav h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;margin:0 0 12px;color:var(--green)}.section-nav a{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:11px 0;font-size:14px}.section-nav a:hover{color:var(--green)}.source-note{margin-top:42px;font-size:13px;color:#62726d;border-top:1px solid var(--line);padding-top:16px}.source-note a{text-decoration:underline}
+.subpage{max-width:1320px;margin:auto;padding:30px clamp(20px,5vw,68px) 60px;min-height:60vh}.breadcrumbs{font-size:13px;color:#62726d;margin-bottom:19px}.breadcrumbs a{text-decoration:underline;text-underline-offset:3px}.pagetitle{font-size:clamp(30px,4vw,47px);letter-spacing:-.045em;line-height:1.13;margin:0 0 25px}.subgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,270px);gap:clamp(28px,5vw,80px);align-items:start}.subgrid.solo{grid-template-columns:minmax(0,900px)}.content{min-width:0;font-size:15px;line-height:1.68;overflow-wrap:anywhere}.content h2{font-size:clamp(23px,2.4vw,30px);line-height:1.22;letter-spacing:-.025em;margin:29px 0 12px}.content h3{font-size:20px;line-height:1.3;margin:23px 0 10px}.content h4,.content h5,.content h6{font-size:17px;margin:18px 0 8px}.content p{margin:0 0 18px}.content a{color:var(--green);text-decoration:underline;text-underline-offset:3px}.content img{max-width:100%;width:auto;height:auto;display:block;margin:18px 0;object-fit:contain;max-height:420px}.content figure{margin:22px 0}.content figcaption{font-size:13px;color:#62726d}.content table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto;margin:20px 0}.content td,.content th{padding:10px 14px;border:1px solid var(--line);text-align:left}.content th{background:#e8efeb}.content ul,.content ol{padding-left:24px}.section-nav{border-top:3px solid var(--green);padding-top:14px}.section-nav h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;margin:0 0 12px;color:var(--green)}.section-nav a{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:11px 0;font-size:14px}.section-nav a:hover{color:var(--green)}.source-note{margin-top:42px;font-size:13px;color:#62726d;border-top:1px solid var(--line);padding-top:16px}.source-note a{text-decoration:underline}
 @media(max-width:800px){.subpage{padding-top:28px;padding-bottom:48px}.subgrid{grid-template-columns:1fr}.section-nav{margin-top:20px}.pagetitle{margin-bottom:24px}}
 """
 # Main page only uses the current layout. Fix local links and deploy unchanged design.
@@ -159,18 +193,39 @@ css="""
 header=str(source.header);footer=str(source.footer)
 head=copy.deepcopy(source.head)
 head.style.append(css)
+head.style.append("\n.news-page{max-width:1320px;margin:auto;padding:28px clamp(20px,5vw,68px) 64px;min-height:65vh}.news-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:24px;border-bottom:1px solid var(--line)}.news-heading h1{font-size:clamp(31px,4vw,47px);line-height:1.1;letter-spacing:-.045em;margin:8px 0}.news-heading p{margin:0;color:#586962;font-size:14px}.news-kicker{display:flex;gap:8px;align-items:center;font-size:11px;letter-spacing:.13em;font-weight:700;color:var(--green);text-transform:uppercase}.news-kicker:before{content:'';display:block;width:20px;height:3px;background:var(--yellow)}.news-search{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;min-width:230px}.news-search input{font:inherit;font-weight:400;font-size:14px;padding:10px 12px;background:white;border:1px solid #cbd9d1;border-radius:5px;width:100%;color:var(--ink)}.archive-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px}.archive-item{display:grid;grid-template-columns:126px minmax(0,1fr);gap:15px;padding:19px 0;border-bottom:1px solid var(--line);align-items:start;min-width:0}.archive-item[hidden]{display:none}.archive-img{width:126px;aspect-ratio:4/3;object-fit:cover;border-radius:4px;display:block;background:#e1e9e3}.archive-placeholder{display:grid;place-items:center;color:var(--green);font-weight:750;font-size:16px;letter-spacing:.06em;background:linear-gradient(135deg,#dcece3,#f1f3eb)}.archive-item time{color:#60746a;font-size:11px;display:block;letter-spacing:.025em;margin-bottom:5px}.archive-item h2{font-size:17px;line-height:1.3;letter-spacing:-.018em;margin:0 0 6px;font-weight:700;overflow-wrap:anywhere}.archive-item p{margin:0;font-size:13px;line-height:1.45;color:#52635d;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.archive-read{display:inline-block;font-size:11px;font-weight:700;color:var(--green);margin-top:7px}.archive-item:hover h2{color:var(--green)}.archive-bottom{display:flex;align-items:center;justify-content:space-between;padding-top:23px;gap:15px}.archive-count{font-size:12px;color:#60746a}.archive-empty{padding:24px 0;font-size:14px}.post-date{font-size:12px;color:#60746a;margin:-12px 0 25px}.post-back{display:inline-block;margin:0 0 22px;font-size:13px;color:var(--green);font-weight:650}\n@media(max-width:900px){.archive-grid{grid-template-columns:1fr;gap:0}.archive-item{grid-template-columns:110px minmax(0,1fr);gap:14px}.archive-img{width:110px}}\n@media(max-width:560px){.news-heading{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:16px}.news-page{padding-top:20px;padding-bottom:40px}.archive-item{grid-template-columns:94px minmax(0,1fr);gap:12px;padding:15px 0}.archive-img{width:94px}.archive-item h2{font-size:15px}.archive-item p{font-size:12px}.archive-bottom{align-items:flex-start;flex-direction:column}}\n")
 for link in head.select('link[href]'):
     if link['href'].startswith('media/'): link['href']='/'+link['href']
 menu_js="""const menu=document.querySelector('.menu'),nav=document.querySelector('#nav');menu.onclick=()=>{const open=nav.classList.toggle('open');menu.setAttribute('aria-expanded',String(open))};document.addEventListener('keydown',e=>{if(e.key==='Escape'){nav.classList.remove('open');menu.setAttribute('aria-expanded','false')}});"""
 for path,(title,node,url,err) in loaded.items():
     if node is None: print('SKIPPED',path,err); continue
+    if path=='/news/': continue
     body=sanitize(node,url,local)
     sidebar=related(path)
+    if path in postmeta:
+        sidebar=''
+        date=postmeta[path][0] or next((d for p,t,d in NEWS if p==path),'')
+        body='<a class="post-back" href="/news/">← Zur Nachrichtenübersicht</a>' + ('<p class="post-date">'+html.escape(date)+'</p>' if date else '') + body
     original='<div class="source-note">Inhaltsübernahme aus der bisherigen Vereinswebsite. <a href="'+html.escape(url,quote=True)+'">Originalseite ansehen</a></div>'
     if path=='/termine/': original='<p><a class="textlink" href="'+html.escape(url,quote=True)+'">Aktuellen Kalender auf der bisherigen Website öffnen →</a></p>'+original
     h=copy.deepcopy(head);h.title.string=title+' | NTC 93'
     markup='<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage"><div class="breadcrumbs"><a href="/">Startseite</a> / '+html.escape(title)+'</div><h1 class="pagetitle">'+html.escape(title)+'</h1><div class="subgrid'+('' if sidebar else ' solo')+'"><article class="content">'+body+original+'</article>'+sidebar+'</div></main>'+footer+'<script>'+menu_js+'</script></body></html>'
     out=ROOT/path.strip('/')/'index.html';out.parent.mkdir(parents=True,exist_ok=True);out.write_text(markup,encoding='utf-8')
+
+# The old page renders desktop and mobile archives in parallel. Use one curated, deduplicated index.
+def esc(value): return html.escape(str(value),quote=True)
+items=[]
+for path,title,fallback_date in NEWS:
+    date,image,teaser=postmeta.get(path,('','',''))
+    date=date or fallback_date
+    target=path if path in local else urljoin(BASE,path)
+    thumb=('<img class="archive-img" src="'+esc(image)+'" alt="" loading="lazy" decoding="async">') if image else '<span class="archive-img archive-placeholder" aria-hidden="true">NTC</span>'
+    items.append('<a class="archive-item" href="'+esc(target)+'">'+thumb+'<div>'+('<time>'+esc(date)+'</time>' if date else '')+'<h2>'+esc(title)+'</h2>'+('<p>'+esc(teaser)+'</p>' if teaser else '')+'<span class="archive-read">Weiterlesen →</span></div></a>')
+h=copy.deepcopy(head);h.title.string='Aktuelles | NTC 93'
+filter_js="""const search=document.querySelector('#newsSearch'),items=[...document.querySelectorAll('.archive-item')],count=document.querySelector('#newsCount'),empty=document.querySelector('#newsEmpty');search.addEventListener('input',()=>{let n=0;const q=search.value.toLocaleLowerCase('de').trim();for(const item of items){item.hidden=!item.textContent.toLocaleLowerCase('de').includes(q);if(!item.hidden)n++}count.textContent=n+' von '+items.length+' Meldungen';empty.hidden=n!==0});"""
+news_markup='<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="news-page"><div class="breadcrumbs"><a href="/">Startseite</a> / Aktuelles</div><div class="news-heading"><div><div class="news-kicker">Vereinsleben &amp; Sport</div><h1>Aktuelles</h1><p>Nachrichten und Berichte rund um den NTC 93.</p></div><label class="news-search" for="newsSearch">Meldungen durchsuchen<input id="newsSearch" type="search" placeholder="Suchbegriff eingeben …"></label></div><div class="archive-grid">'+''.join(items)+'</div><p id="newsEmpty" class="archive-empty" hidden>Keine passenden Meldungen gefunden.</p><div class="archive-bottom"><span id="newsCount" class="archive-count" aria-live="polite">'+str(len(items))+' aktuelle Meldungen</span><a class="textlink" href="https://ntc93.com/news/">Ältere Beiträge im bisherigen Archiv →</a></div></main>'+footer+'<script>'+menu_js+filter_js+'</script></body></html>'
+out=ROOT/'news/index.html';out.parent.mkdir(parents=True,exist_ok=True);out.write_text(news_markup,encoding='utf-8')
+
 report={'imported':sorted(local),'skipped':{p:err for p,(_,_,_,err) in loaded.items() if err}}
 (ROOT/'migration-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 print('Imported',len(local),'pages:',', '.join(sorted(local)))
