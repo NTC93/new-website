@@ -110,6 +110,7 @@ def parse_group(soup):
                     for cell in cs[:fields['rank']]:
                         marks.append(text(cell))
                 r['promotion']=any(re.search(r'\bAufsteiger\b|\bAufstiegsplatz\b',m,re.I) for m in marks)
+                r['relegation']=any(re.search(r'\bAbsteiger\b|\bAbstiegsplatz\b',m,re.I) for m in marks)
                 standings.append(r)
         else:
             hi=index(labels,'heimmannschaft');ai=index(labels,'gastmannschaft')
@@ -177,7 +178,10 @@ def main():
         complete=bool(fixtures) and all(f['score'] is not None for f in fixtures)
         for row in table:
             row['promotion_status']=('promoted' if complete else 'position') if row.get('promotion') else ''
+        for row in table:
+            row['relegation_status']=('relegated' if complete else 'position') if row.get('relegation') else ''
         team['promotion_status']=mine[0]['promotion_status'] if len(mine)==1 else ''
+        team['relegation_status']=mine[0]['relegation_status'] if len(mine)==1 else ''
         team['table']=table
         for f in fixtures:
             home=own(team,f['home'],f['home_id']);away=own(team,f['away'],f['away_id'])
