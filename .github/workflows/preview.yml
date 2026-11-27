@@ -58,10 +58,23 @@ jobs:
         run: |
           php -l site/admin/index.php
           node --check site/cms-public.js
-          python3 -m py_compile tools/import_pages.py
+          python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
+      - name: Restore downloaded public media
+        if: github.event_name != 'schedule'
+        uses: actions/cache@v4
+        with:
+          path: site/media/import
+          key: ntc-public-media-${{ github.run_id }}
+          restore-keys: ntc-public-media-
       - name: Build public subpages
         if: github.event_name != 'schedule'
         run: python3 tools/import_pages.py
+      - name: Save archive migration report
+        if: github.event_name != 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-report
+          path: site/migration-report.json
       - name: Verify isolated FTPS target and publish preview
         env:
           CMS_DB_HOST: ${{ secrets.CMS_DB_HOST }}
@@ -93,7 +106,7 @@ jobs:
           fi
           while IFS= read -r -d '' f; do
             upload "$f" "${f#site/}"
-          done < <(find site -type f ! -path site/index.html -print0)
+          done < <(find site -type f ! -path site/index.html ! -path site/migration-report.json -print0)
           if [[ -n "$CMS_DB_NAME" && -n "$CMS_DB_USER" && -n "$CMS_DB_PASSWORD" && ${#CMS_SETUP_TOKEN} -ge 32 ]]; then
             # Verify Apache blocks the private config directory before provisioning credentials.
             upload site/admin/private/.htaccess admin/private/.htaccess
@@ -108,6 +121,9 @@ jobs:
             echo 'CMS database secrets not yet configured; leaving any existing local configuration untouched.'
           fi
           upload site/index.html index.html
+          # Verify the news page was uploaded, not just the homepage.
+          curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/news/' -o "$RUNNER_TEMP/news.html"
+          cmp -s site/news/index.html "$RUNNER_TEMP/news.html"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
           [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt"
           echo 'Preview deployed and verified.'
