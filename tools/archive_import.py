@@ -1,6 +1,8 @@
 """Discover historical public WordPress posts using available standard interfaces."""
 from urllib.parse import urljoin,urlsplit,parse_qs,urlencode,urlunsplit
 import re, json
+from email.utils import parsedate_to_datetime
+from xml.etree import ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 import requests
@@ -44,13 +46,13 @@ def discover(home,route,existing):
                 url=queue.pop(0)
                 if url in seen or urlsplit(url).hostname not in HOSTS:continue
                 seen.add(url)
-                xml=BeautifulSoup(get(url).content,'xml') if False else BeautifulSoup(get(url).content,'html.parser')
-                for tag in xml.find_all('sitemap'):
-                    loc=tag.find('loc')
-                    if loc and re.search(r'(?:post|sitemap_index)',loc.get_text(strip=True),re.I):queue.append(loc.get_text(strip=True))
-                for tag in xml.find_all('url'):
-                    loc=tag.find('loc')
-                    if loc and re.search(r'post',urlsplit(url).path,re.I):add(loc.get_text(strip=True))
+                xml=ET.fromstring(get(url).content)
+                for tag in xml.findall('.//{*}sitemap'):
+                    loc=tag.findtext('{*}loc','').strip()
+                    if loc and re.search(r'(?:post|sitemap_index)',loc,re.I):queue.append(loc)
+                for tag in xml.findall('.//{*}url'):
+                    loc=tag.findtext('{*}loc','').strip()
+                    if loc and re.search(r'post',urlsplit(url).path,re.I):add(loc)
             if len(posts)>before:evidence.append({'method':'Post sitemap','discovered':len(posts)-before})
         except Exception as e:errors.append('Sitemap: '+str(e))
     # Elementor may paginate with ?e-page-<widget>=N, or pretty pagination.
@@ -110,4 +112,30 @@ def discover(home,route,existing):
         if advertised>1 and not any('Archive pagination' in e['method'] for e in evidence):errors.append('Archive pagination returned no additional articles')
         evidence.append({'method':'Archive index','pages_advertised':advertised,'first_page_posts':perpage})
     except Exception as e:errors.append('Archive: '+str(e))
-    return posts,{'methods':evidence,'expected':max(0,(advertised-1)*5+1) if advertised else 0,'errors':errors}
+    expected=max(0,(advertised-1)*5+1) if advertised else 0
+    # Public RSS can work even when REST or pretty archive pagination is unavailable.
+    if not expected or len(posts)<expected:
+        try:
+            def feed(n):
+                xml=ET.fromstring(get(BASE+'?'+urlencode({'feed':'rss2','paged':n})).content)
+                result=[]
+                for item in xml.findall('.//item'):
+                    u=item.findtext('link','');t=item.findtext('title','');d=item.findtext('pubDate','')
+                    try:d=parsedate_to_datetime(d).date().isoformat()
+                    except Exception:d=''
+                    if u:result.append((u,t,d))
+                return result
+            first=feed(1);before=len(posts)
+            for u,t,d in first:add(u,t,d)
+            if first:
+                previous={u for u,_,_ in first}
+                for n in range(2,min(max(2,advertised,100),300)+1):
+                    page=feed(n)
+                    current={u for u,_,_ in page}
+                    if not current or not current-previous:break
+                    for u,t,d in page:add(u,t,d)
+                    previous|=current
+                    if expected and len(posts)>=expected and len(page)<len(first):break
+            if len(posts)>before:evidence.append({'method':'RSS','discovered':len(posts)-before})
+        except Exception as e:errors.append('RSS: '+str(e))
+    return posts,{'methods':evidence,'expected':expected,'errors':errors}
