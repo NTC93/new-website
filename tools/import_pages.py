@@ -426,13 +426,26 @@ source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
 
 # Club calendar fallback stays usable even before the CMS database is available.
 def club_event_list(compact=False):
-    items=[
-      ('2026-12-06','06','Dez','NTC-Geburtstagsbrunch','11:00–15:00 Uhr · Clubhaus NTC 93','Brunchbuffet für 20 € pro Person inklusive Sektempfang. Anmeldung mit Personenzahl an info@ntc93.de.','/33-jahre-ntc-und-ein-brunch-zum-anstossen/',''),
-      ('2026-12-19','19','Dez','Arbeitseinsatz Tennishalle','Tennishalle NTC 93 · Uhrzeit noch offen','Die endgültige Bestätigung und Uhrzeit stehen noch aus.','/fit-fuer-den-winter-unsere-halle-ist-bereit/','Voraussichtlich'),
-    ]
+    # Read the same checked-in seed as the CMS to keep the offline fallback in sync.
+    raw=(ROOT/'admin/index.php').read_text(encoding='utf-8')
+    match=re.search(r"\$eventSeed=json_decode\('([^\n]*)',true\);",raw)
+    items=json.loads(match.group(1)) if match else []
+    from datetime import date as dt_date
+    today=dt_date.today().isoformat()
+    months=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez']
     rows=[]
-    for date,day,month,title,meta,body,link,status in items:
-        rows.append('<article class="club-event" data-event-date="'+date+'"><div class="club-event-date"><strong>'+day+'</strong><span>'+month+' 2026</span></div><div class="club-event-copy"><h3>'+html.escape(title)+'</h3>'+('<span class="club-event-status">'+status+'</span>' if status else '')+'<p class="club-event-meta">'+html.escape(meta)+'</p>'+('' if compact else '<p>'+html.escape(body)+'</p>')+'<a href="'+link+'">Details →</a></div></article>')
+    for event in sorted(items,key=lambda x:x['data']['date']):
+        d=event['data'];start=d['date'];end=d.get('end_date') or start
+        if end<today:continue
+        day=start[8:10];month=months[int(start[5:7])-1]+' '+start[:4]
+        if end>start:
+            if end[:7]==start[:7]:day+='–'+end[8:10]
+            else:day=start[8:10]+'.'+start[5:7]+'.–'+end[8:10]+'.'+end[5:7]+'.'
+        meta=' · '.join(v for v in [(d.get('time','')+' Uhr') if d.get('time') else '',d.get('venue','')] if v)
+        status=d.get('status','')
+        esc=lambda v:html.escape(str(v),quote=True)
+        rows.append('<article class="club-event" data-event-date="'+esc(start)+'" data-event-end="'+esc(end)+'"><div class="club-event-date"><strong>'+esc(day)+'</strong><span>'+esc(month)+'</span></div><div class="club-event-copy"><h3>'+esc(event['title'])+'</h3>'+('<span class="club-event-status">'+esc(status)+'</span>' if status and status!='Bestätigt' else '')+'<p class="club-event-meta">'+esc(meta)+'</p>'+('' if compact else '<p>'+esc(d.get('body',''))+'</p>')+('<a href="'+esc(d['link'])+'">Details →</a>' if d.get('link') else '')+'</div></article>')
+    if compact:rows=rows[:4]
     return '<div class="club-event-list" data-club-events="'+('compact' if compact else 'full')+'">'+''.join(rows)+'</div>'
 club_events_css="""
 .club-events-home{max-width:1320px;margin:0 auto;padding:18px clamp(20px,5vw,68px) 25px}.club-events-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line,#dce5df);padding-bottom:10px;margin-bottom:12px}.club-events-heading h2{font-size:clamp(22px,2.4vw,30px);margin:3px 0 0;letter-spacing:-.03em;line-height:1.15}.club-event-list{display:grid;gap:0}.club-event{display:grid;grid-template-columns:74px minmax(0,1fr);gap:17px;padding:15px 0;border-bottom:1px solid var(--line,#dce5df);align-items:start}.club-event-date{min-height:70px;padding:8px 5px;text-align:center;background:#e8f0ea;color:#155d4b;border-radius:4px;display:grid;align-content:center;gap:3px}.club-event-date strong{font-size:28px;line-height:1}.club-event-date span{font-size:11px;font-weight:650}.club-event-copy h3{margin:0 0 4px;font-size:17px;line-height:1.3}.club-event-copy p{font-size:14px;line-height:1.5;margin:5px 0}.club-event-copy p.club-event-meta{font-size:12px;color:var(--muted,#61776d)}.club-event-copy a{font-size:13px;font-weight:700;color:var(--green,#146143);display:inline-block;margin-top:3px}.club-event-status{font-size:11px;font-weight:650;color:#80621c;background:#f5efd9;padding:2px 6px;border-radius:3px}.club-event-list[data-club-events=compact]{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.club-event-list[data-club-events=compact] .club-event{grid-template-columns:60px minmax(0,1fr);gap:12px;padding:8px 0}.club-event-list[data-club-events=compact] .club-event-date{min-height:61px}.club-event-list[data-club-events=compact] .club-event-copy h3{font-size:15px}.club-event-page{max-width:1020px;margin:0 auto}.club-event-page .club-event-list{margin:24px 0}.club-event-empty{color:var(--muted,#61776d);font-size:14px;padding:14px 0}.club-event-foot{font-size:14px;color:var(--muted,#61776d);margin:24px 0}@media(max-width:680px){.club-event-list[data-club-events=compact]{grid-template-columns:1fr;gap:6px}.club-event{grid-template-columns:64px minmax(0,1fr);gap:12px}.club-events-heading{align-items:center}}
@@ -833,9 +846,12 @@ out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main c
 
 # Dedicated event calendar, no dependence on legacy calendar widgets.
 h=copy.deepcopy(head);h.title.string='Termine | NTC 93'
-event_page='<div class="club-event-page"><div class="breadcrumbs"><a href="/">Startseite</a> › Termine</div>'+masthead('Termine','Vereinsleben','Die kommenden Veranstaltungen und Termine unseres Tennisclubs.')+club_event_list()+'<p class="club-event-foot">Die Punktspieltermine findest du im <a class="textlink" href="/matchcenter/">Matchcenter →</a>.</p></div>'
+calendar_subscription='<section class="calendar-subscription"><div><h2>NTC-Termine abonnieren</h2><p>Neue Termine und Änderungen werden automatisch mit deinem Kalender synchronisiert (je nach Aktualisierungsintervall deiner Kalender-App).</p></div><div class="calendar-actions"><a class="detail-action" id="calendarWebcal" href="webcal://neu.ntc93.de/admin/?calendar=1">Kalender abonnieren</a><a class="detail-action outline" href="/admin/?calendar=1">iCal-Datei öffnen</a></div><label for="calendarUrl">Kalender-URL für Google Kalender, Outlook und andere Apps</label><div class="calendar-url"><input id="calendarUrl" readonly value="https://neu.ntc93.de/admin/?calendar=1"><button type="button" class="detail-action outline" id="calendarCopy">Kopieren</button></div><p class="calendar-note">Google Kalender: Weitere Kalender → Per URL. Outlook: Kalender hinzufügen → Aus dem Internet abonnieren. Apple Kalender: Neues Kalenderabonnement.</p></section>'
+calendar_script="""(()=>{const url=location.origin+'/admin/?calendar=1',field=document.querySelector('#calendarUrl'),link=document.querySelector('#calendarWebcal'),copy=document.querySelector('#calendarCopy');if(!field||!link||!copy)return;field.value=url;link.href=url.replace(/^https?:/,'webcal:');copy.onclick=async()=>{try{await navigator.clipboard.writeText(url);copy.textContent='Kopiert'}catch{field.focus();field.select()}}})();"""
+h.style.append(".calendar-subscription{background:#edf4ee;border:1px solid #d5e4d8;padding:22px;border-radius:6px;margin:26px 0}.calendar-subscription h2{font-size:22px;margin:0 0 7px}.calendar-subscription p{font-size:14px;line-height:1.55}.calendar-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px}.calendar-subscription label{font-size:12px;font-weight:650;display:block;margin:0 0 5px}.calendar-url{display:flex;gap:8px}.calendar-url input{min-width:0;flex:1;padding:9px;border:1px solid #b9cbbf;background:white;border-radius:4px;font:inherit;font-size:13px}.calendar-note{font-size:12px!important;color:var(--muted)}.club-event-date strong{font-size:clamp(17px,2.1vw,25px)}")
+event_page='<div class="club-event-page"><div class="breadcrumbs"><a href="/">Startseite</a> › Termine</div>'+masthead('Termine','Vereinsleben','Die kommenden Veranstaltungen und Termine unseres Tennisclubs.')+calendar_subscription+club_event_list()+'<p class="club-event-foot">Die Punktspieltermine findest du im <a class="textlink" href="/matchcenter/">Matchcenter →</a>.</p></div>'
 out=ROOT/'termine/index.html';out.parent.mkdir(parents=True,exist_ok=True)
-out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_page+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_page+'</main>'+footer+'<script>'+menu_js+calendar_script+'</script></body></html>',encoding='utf-8')
 
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
 migration=localize(ROOT)
