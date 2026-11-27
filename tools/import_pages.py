@@ -243,7 +243,7 @@ with ThreadPoolExecutor(max_workers=4) as pool:
 hall = BeautifulSoup('<div><img src="https://ntc93.com/wp-content/uploads/2024/02/1000062201-1024x461.jpg" alt="Tennishalle des NTC"><h2>Ganzjährig Tennis spielen</h2><p>Unsere im Dezember 2023 eröffnete Zweifeld-Tennishalle bietet mit dem Advantage RedCourt Belag ein sandplatzähnliches Spielgefühl – auch im Winter.</p><p><a href="https://ntc93v8.ebusy.de/court-module/3076">Hallenplatz buchen →</a></p><h2>Informationen zur Halle</h2><p><a href="https://ntc93app.de/halle">Halleninformationen, Förderer und Sponsoring</a></p></div>','html.parser').div
 loaded['/tennishalle/']=('Tennishalle',hall,'https://ntc93app.de/halle',None)
 local={p for p,(_,node,_,err) in loaded.items() if node is not None}
-local.update(('/news/','/termine/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/gastronomie/','/'))
+local.update(('/news/','/termine/','/sponsoren/','/matchcenter/','/redaktion/','/anfahrt/','/gastronomie/','/mannschaften/','/damen/','/herren/','/seniorinnen/','/senioren/','/jugendteams/','/mixed-doppel/','/mannschaften/team/','/'))
 if len(local)<12: raise RuntimeError('Too few pages imported; leaving existing preview untouched')
 source=BeautifulSoup((ROOT/'index.html').read_text(),'html.parser')
 def rewrite(soup):
@@ -256,7 +256,7 @@ def rewrite(soup):
 rewrite(source)
 # Shared navigation: retain the original destinations, prefer migrated pages.
 def nav_target(label, fallback=''):
-    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/','/gastronomie/','/termine/'):
+    if fallback in ('/matchcenter/','/sponsoren/','/tennishalle/','/anfahrt/','/gastronomie/','/termine/','/mannschaften/','/damen/','/herren/','/seniorinnen/','/senioren/','/jugendteams/','/mixed-doppel/'):
         return fallback
     wanted=' '.join(label.casefold().split())
     for a in home.select('li.menu-item a[href], nav a[href]')+home.select('a[href]'):
@@ -327,7 +327,7 @@ def build_nav(source):
         if d.contents:g.append(d);nav.append(g)
     group('Aktuelles',[('',[('Nachrichten','News','/news/'),('Termine','Termine','/termine/'),('NTC Tennis App','NTC Tennis App',''),('TVBB Spielergebnisse','TVBB Spielergebnisse','')])])
     group('Verein',[('Über den NTC',[('Unser Verein','Über uns','/ueber-uns/'),('Vorstand','Vorstand','/vorstand/'),('Trainer','Trainer','/trainer/'),('Ehrenmitglieder','Ehrenmitglieder','/ehrenmitglieder/'),('Gastronomie','Gastronomie','/gastronomie/'),('Anfahrt & Kontakt','Anfahrt','/anfahrt/')]),('Organisation & Partner',[('Sponsoren','Sponsoren','/sponsoren/'),('Sponsor werden','Sponsor werden','/sponsor-werden/'),('Satzung','Satzung',''),('NTC-Informationen','NTC-Informationen',''),('Platzordnung','Platzordnung',''),('Arbeitskarte','Arbeitskarte','')])],True)
-    group('Teams',[('',[('Mannschaften im Überblick','Teams','/mannschaften/'),('Damen','Damen',''),('Herren','Herren',''),('Seniorinnen','Seniorinnen',''),('Senioren','Senioren',''),('Jugendteams','Jugendteams','')])])
+    group('Teams',[('',[('Mannschaften im Überblick','Teams','/mannschaften/'),('Damen','Damen','/damen/'),('Herren','Herren','/herren/'),('Seniorinnen','Seniorinnen','/seniorinnen/'),('Senioren','Senioren','/senioren/'),('Jugendteams','Jugendteams','/jugendteams/'),('Mixed & Doppel','Mixed & Doppel','/mixed-doppel/')])])
     link('Matchcenter','/matchcenter/',nav)
     group('Jugend',[('Training',[('Jugend im Überblick','Jugend','/jugend/'),('Trainingskonzept','Trainingskonzept',''),('Teamsporttraining','Teamsporttraining',''),('Breitensporttraining','Breitensporttraining',''),('Minitennis','Minitennis',''),('Förderungskonzept','Förderungskonzept','')]),('Mannschaften',[('Jugendteams','Jugendteams',''),('Juniorinnen 15–18','Juniorinnen 15-18',''),('Junioren 15–18','Junioren 15-18',''),('Mixed Teams 10–12','Mixed Teams 10-12','')]),('Jugend-Angebote',[('Feriencamps','Feriencamps',''),('Turniere','Turniere',''),('Konditionstraining','Konditionstraining',''),('Workshops','Workshops',''),('Matchpraxis','Matchpraxis',''),('Jugend trainiert für Olympia','Jugend trainiert für Olympia',''),('Interne Rangliste','Interne Rangliste','')])],True)
     group('Tennishalle',[('',[('Unsere Tennishalle','Tennishalle','/tennishalle/'),('Hallenbuchung','Hallenbuchung','')])])
@@ -791,7 +791,7 @@ def layout_detail(path,title,node,url,body,sidebar,original):
 
 for path,(title,node,url,err) in loaded.items():
     if node is None: print('SKIPPED',path,err); continue
-    if path in ('/news/','/termine/'): continue
+    if path in ('/news/','/termine/','/mannschaften/','/damen/','/herren/','/seniorinnen/','/senioren/','/jugendteams/','/mixed-doppel/'): continue
     body=sanitize(node,url,local)
     sidebar=related(path)
     if path in postmeta:
@@ -928,6 +928,30 @@ h.style.append(".calendar-subscription{background:#edf4ee;border:1px solid #d5e4
 event_page='<div class="club-event-page"><div class="breadcrumbs"><a href="/">Startseite</a> › Termine</div>'+masthead('Termine','Vereinsleben','Die kommenden Veranstaltungen und Termine unseres Tennisclubs.')+calendar_subscription+club_event_list()+'<p class="club-event-foot">Die Punktspieltermine findest du im <a class="textlink" href="/matchcenter/">Matchcenter →</a>.</p></div>'
 out=ROOT/'termine/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_page+'</main>'+footer+'<script>'+menu_js+calendar_script+'</script></body></html>',encoding='utf-8')
+
+
+# Replace photo-based legacy team pages with the nuLiga data portal.
+teamhead=copy.deepcopy(head)
+teamhead.append(source.new_tag('link',attrs={'rel':'stylesheet','href':'/teams.css'}))
+teamhead.append(source.new_tag('script',attrs={'src':'/teams.js','defer':''}))
+team_routes={'/mannschaften/':('Mannschaften',''),'/damen/':('Damen','Damen'),'/herren/':('Herren','Herren'),'/seniorinnen/':('Seniorinnen','Seniorinnen'),'/senioren/':('Senioren','Senioren'),'/jugendteams/':('Jugendteams','Jugend'),'/mixed-doppel/':('Mixed & Doppel','Mixed & Doppel'),'/mannschaften/team/':('Mannschaft','')}
+for route_path,(title,category) in team_routes.items():
+    detail=route_path=='/mannschaften/team/'
+    h=copy.deepcopy(teamhead);h.title.string=title+' | NTC 93'
+    intro='' if detail else masthead(title,'Mannschaftsspielbetrieb','Alle Mannschaften, Tabellenplätze und Spielpläne nach Saison. Die Daten stammen direkt aus nuLiga / TVBB.')
+    if category:intro+='<p><a class="detail-textlink" href="/mannschaften/">← Alle Mannschaften</a></p>'
+    crumb='<div class="breadcrumbs"><a href="/">Startseite</a> › <a href="/mannschaften/">Mannschaften</a>'+(' › '+E(title) if route_path!='/mannschaften/' else '')+'</div>'
+    content=crumb+intro+'<div class="team-portal" data-team-portal="'+('detail' if detail else 'overview')+'" data-category="'+E(category)+'"><p class="tp-empty">Mannschaftsdaten werden geladen …</p><noscript><a href="https://tvbb.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubTeams?club=36381" target="_blank" rel="noopener noreferrer">Mannschaften bei nuLiga ↗</a></noscript></div>'
+    out=ROOT/route_path.strip('/')/'index.html';out.parent.mkdir(parents=True,exist_ok=True)
+    out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+# Third area in Matchcenter: all standings, independent from match filters.
+mc=ROOT/'matchcenter/index.html'
+if mc.is_file():
+    page=BeautifulSoup(mc.read_text(encoding='utf-8'),'html.parser')
+    page.head.append(page.new_tag('link',attrs={'rel':'stylesheet','href':'/teams.css'}))
+    page.head.append(page.new_tag('script',attrs={'src':'/teams.js','defer':''}))
+    page.main.append(BeautifulSoup('<section class="tp-matchcenter" id="tabellen"><div class="detail-kicker">Mannschaftsspielbetrieb</div><h2>Tabellen</h2><p>Wähle die Saison und eine Mannschaft aus, um die vollständige Gruppentabelle aufzurufen.</p><div class="team-portal" data-team-portal="standings"><p class="tp-empty">Tabellen werden geladen …</p></div></section>','html.parser'))
+    mc.write_text(str(page),encoding='utf-8')
 
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
 migration=localize(ROOT)
