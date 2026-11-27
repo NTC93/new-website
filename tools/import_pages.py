@@ -282,7 +282,7 @@ def article_body(raw,title):
     for el in reversed(clean.find_all(['div','section'])):
         if not el.get_text(strip=True) and not el.find(['img','a','table','hr']): el.decompose()
     return clean
-def people_profiles(clean):
+def people_profiles(clean, default_group='Vorstand'):
     # The existing people pages use image, name (h4), role and contact in reading order.
     # Do not guess identity from photos: only use the image directly preceding the named entry.
     headings=[h for h in clean.find_all('h4') if len(h.get_text(' ',strip=True).split())>=2]
@@ -290,25 +290,27 @@ def people_profiles(clean):
     groups=[]; current=None; cards=[]
     for h in headings:
         group=h.find_previous('h2')
-        group_name=group.get_text(' ',strip=True) if group else 'Vorstand'
+        group_name=group.get_text(' ',strip=True) if group else default_group
         if group_name!=current:
             if cards: groups.append((current,cards))
             current=group_name;cards=[]
         im=h.find_previous('img')
-        picture=image_url(im)
+        previous_name=h.find_previous('h4')
+        picture=image_url(im) if im and im.find_previous('h4') is previous_name else ''
         name=h.get_text(' ',strip=True)
         detail=[]; seen=set()
         for nxt in h.next_elements:
-            if not getattr(nxt,'name',None): continue
-            if nxt.name in ('h2','h4','img'): break
-            if nxt.name not in ('p','h5','h6','a','li'): continue
-            val=nxt.get_text(' ',strip=True)
+            if getattr(nxt,'name',None) in ('h2','h4','img'): break
+            if getattr(nxt,'name',None) is not None or not isinstance(nxt,str): continue
+            if nxt.parent is h or h in nxt.parents: continue
+            val=' '.join(nxt.split())
             if val and val not in seen and len(val)<240:
                 seen.add(val);detail.append(val)
         lines=[]
         for val in detail:
             mail=re.fullmatch(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}',val)
-            lines.append('<a href="mailto:'+E(val)+'">'+E(val)+'</a>' if mail else '<p>'+E(val)+'</p>')
+            telephone=re.fullmatch(r'(?:Tel:\s*)?\+?\d[\d /()-]{5,}',val,re.I)
+            lines.append('<a href="mailto:'+E(val)+'">'+E(val)+'</a>' if mail else '<a href="tel:'+E(re.sub(r'[^+\d]','',val))+'">'+E(val)+'</a>' if telephone else '<p>'+E(val)+'</p>')
         cards.append('<div class="person">'+(photo(picture,'') if picture else '<span class="person-placeholder" aria-hidden="true">NTC</span>')+'<div><h3>'+E(name)+'</h3>'+''.join(lines)+'</div></div>')
     if cards: groups.append((current,cards))
     return ''.join('<section class="people-section"><h2>'+E(g)+'</h2><div class="people-grid">'+''.join(cs)+'</div></section>' for g,cs in groups)
@@ -344,7 +346,7 @@ def layout_detail(path,title,node,url,body,sidebar,original):
         stats=metrics([('1993','Gegründet'),('7','Sandplätze'),('2','Hallenplätze')])
         links=section_links(node,[('Vorstand','/vorstand/','Ansprechpartner und Verantwortliche'),('Trainer','/trainer/','Training auf und neben dem Platz'),('Ehrenmitglieder','/ehrenmitglieder/','Engagement für unseren Verein'),('Tennishalle','/tennishalle/','Auch im Winter Tennis spielen'),('Sponsoring','/sponsor-werden/','Den Verein unterstützen'),('Gastronomie','https://due-fratelli-neuenhagen.de/','Trattoria Due Fratelli auf der Anlage')],url)
         main='<section class="detail-section"><h2>Ein Club, viele Möglichkeiten</h2><p>Auf unseren Sandplätzen und in der Tennishalle treffen sich Freizeit- und Mannschaftsspieler. Training, Turniere, Jugendarbeit und die gemeinsame Zeit auf der Anlage gehören zum Vereinsleben.</p>'+links+'</section>'
-        return crumb+top+stats+main+original
+        return crumb+top+stats+main+'<section class="detail-section"><h2>Vereinsinformationen</h2>'+section_links(node,[('Satzung','/satzung/','Grundlagen unseres Vereins'),('NTC-Informationen',matching_link(home,'NTC-Informationen'),'Wissenswertes für Mitglieder'),('Platzordnung','/platzordnung/','Regeln auf der Anlage'),('Arbeitskarte',matching_link(home,'Arbeitskarte'),'Vereinsarbeit organisieren')],url)+'</section>'+original
     if path=='/mannschaften/':
         top=masthead('Unsere Mannschaften','Sport & Wettkampf','Von der Jugend bis zu den Seniorenteams – alle Mannschaftsbereiche auf einen Blick.','',link_button('Matchcenter','/matchcenter/'))
         links=section_links(node,[('Damen','/damen/','Damenmannschaften'),('Herren','/herren/','Herrenmannschaften'),('Seniorinnen','/seniorinnen/','Damen in den Altersklassen'),('Senioren','/senioren/','Herren in den Altersklassen')],url,True)
@@ -359,12 +361,13 @@ def layout_detail(path,title,node,url,body,sidebar,original):
     if path=='/mitglieder/':
         top=masthead('Mitgliedschaft','Vereinsservice','Informationen zur Mitgliedschaft, Beiträgen und zum Einstieg in den NTC.','')
         notice='<aside class="membership-notice"><div class="detail-kicker">Wichtiger Hinweis</div><h2>Vorübergehender Aufnahmestopp</h2><p>Aufgrund der derzeitigen Auslastung können wir aktuell keine neuen Mitglieder regulär aufnehmen. Sobald eine Aufnahme wieder möglich ist, informiert der Verein.</p><a class="detail-textlink" href="mailto:info@ntc93.de">Kontakt zum Verein →</a></aside>'
-        links=section_links(node,[('Beiträge','/beitraege/','Informationen zu den Mitgliedsbeiträgen'),('Satzung','/satzung/','Grundlagen der Mitgliedschaft'),('Persönlicher Bereich','https://ntc93app.de/','Digitale Vereinsservices'),('Platzordnung','/platzordnung/','Regeln für die Nutzung unserer Anlage')],url)
+        links=section_links(node,[('Beiträge','/beitraege/','Informationen zu den Mitgliedsbeiträgen'),('Satzung','/satzung/','Grundlagen der Mitgliedschaft'),('Persönlicher Bereich',matching_link(home,'Persönlicher Bereich') or 'https://ntc93app.de/','Digitale Vereinsservices'),('Platzordnung','/platzordnung/','Regeln für die Nutzung unserer Anlage')],url)
         # Keep the original membership details accessible below the important notice.
         return crumb+top+notice+'<section class="detail-section"><h2>Mitgliederservice</h2>'+links+'</section><div class="subgrid'+('' if sidebar else ' solo')+'"><article class="content">'+str(clean)+original+'</article>'+sidebar+'</div>'
-    if path=='/vorstand/':
-        top=masthead('Vorstand & Beirat','Menschen im Verein','Die Ansprechpartner für den Vereinsalltag und die sportliche Entwicklung.')
-        profiles=people_profiles(clean)
+    if path in ('/vorstand/','/trainer/'):
+        is_board=path=='/vorstand/'
+        top=masthead('Vorstand & Beirat' if is_board else 'Unser Trainerteam','Menschen im Verein','Die Ansprechpartner für den Vereinsalltag und die sportliche Entwicklung.' if is_board else 'Training für unterschiedliche Altersklassen und Spielstärken.')
+        profiles=people_profiles(clean,'Vorstand' if is_board else 'Trainer')
         if profiles: return crumb+top+profiles+original
     if path in ('/damen/','/herren/','/seniorinnen/','/senioren/'):
         top=masthead(title.title(),'Unsere Mannschaften','Mannschaftsvorstellungen und aktuelle Begegnungen.',actions=link_button('Matchcenter','/matchcenter/'))
