@@ -42,7 +42,7 @@
   tab.append(tbody);scroll.append(tab);section.append(scroll,el('p','tp-legend','B = Begegnungen · S = Siege · U = Unentschieden · N = Niederlagen. Goldener Pfeil: Aufstieg / Aufstiegsplatz. Roter Pfeil: Abstieg / Abstiegsplatz. Die ausgewählte NTC-Mannschaft ist hervorgehoben.'));
   return section;
  }
- function fixtures(t,extra=false){
+ function fixtures(t,extra=false,combined=false){
   const section=el('section','tp-section');section.append(el('h2','',extra||t.placement?'Platzierungsspiele / weitere Runde':'Spielplan & Ergebnisse'));
   if(extra||t.placement){
    section.classList.add('tp-placement-section');
@@ -50,11 +50,12 @@
    if(t.status==='cached')section.append(el('p','tp-muted','Letzter erfolgreicher Datenabruf; Aktualisierung vorübergehend nicht verfügbar.'));
   }
   if(extra&&t.table.length)section.append(table(t));
-  if(!t.matches.length){section.append(el('p','tp-empty',t.status==='unavailable'?'Begegnungen vorübergehend nicht abrufbar.':'Noch keine Begegnungen verfügbar.'),link('Spielplan bei nuLiga ↗',t.group_url));return section}
+  const allMatches=combined?[...t.matches.map(m=>({...m,phase:'Gruppenrunde'})),...(t.rounds||[]).flatMap(r=>(r.matches||[]).map(m=>({...m,phase:m.round_label&&m.round_label!=='Platzierungsspiel'?'Platzierungsspiel · '+m.round_label:'Platzierungsspiel',placement:true})))].sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||(a.time||'').localeCompare(b.time||'')):t.matches;
+  if(!allMatches.length){section.append(el('p','tp-empty',t.status==='unavailable'?'Begegnungen vorübergehend nicht abrufbar.':'Noch keine Begegnungen verfügbar.'),link('Spielplan bei nuLiga ↗',t.group_url));return section}
   const scroll=el('div','tp-scroll');scroll.tabIndex=0;const tab=el('table','tp-table tp-fixtures'),h=el('thead'),hr=el('tr');
-  for(const x of [...(extra||t.placement?['Runde / Spiel']:[]),'Datum','Uhrzeit','Spielort','Gegner','Ergebnis']){const th=el('th','',x);th.scope='col';hr.append(th)}h.append(hr);tab.append(h);
+  for(const x of [...(extra||t.placement||combined?['Runde / Spiel']:[]),'Datum','Uhrzeit','Spielort','Gegner','Ergebnis']){const th=el('th','',x);th.scope='col';hr.append(th)}h.append(hr);tab.append(h);
   const tbody=el('tbody');
-  for(const m of t.matches){const tr=el('tr',!m.score&&m.date>=today()?'tp-upcoming':'');if(extra||t.placement)tr.append(el('td','',m.round_label||'Platzierungsspiel'));tr.append(el('td','',fmt(m.date)),el('td','',m.time||'–'),el('td','',m.home?'Heim':'Auswärts'),el('td','',(m.home?'gg. ':'bei ')+m.opponent));const td=el('td');if(Array.isArray(m.score)){const style=m.score[0]>m.score[1]?'win':m.score[0]<m.score[1]?'loss':'draw';const badge=el('span','tp-score '+style,m.score.join(':'));if(m.report){const a=link('',m.report);a.setAttribute('aria-label','Spielbericht '+m.opponent);a.append(badge);td.append(a)}else td.append(badge)}else td.append(el('span','tp-muted','–'));tr.append(td);tbody.append(tr)}
+  for(const m of allMatches){const tr=el('tr',(!m.score&&m.date>=today()?'tp-upcoming ':'')+(m.placement?'tp-placement-row':''));if(extra||t.placement||combined)tr.append(el('td','',m.phase||m.round_label||'Platzierungsspiel'));tr.append(el('td','',fmt(m.date)),el('td','',m.time||'–'),el('td','',m.home?'Heim':'Auswärts'),el('td','',(m.home?'gg. ':'bei ')+m.opponent));const td=el('td');if(Array.isArray(m.score)){const style=m.score[0]>m.score[1]?'win':m.score[0]<m.score[1]?'loss':'draw';const badge=el('span','tp-score '+style,m.score.join(':'));if(m.report){const a=link('',m.report);a.setAttribute('aria-label','Spielbericht '+m.opponent);a.append(badge);td.append(a)}else td.append(badge)}else td.append(el('span','tp-muted','–'));tr.append(td);tbody.append(tr)}
   tab.append(tbody);scroll.append(tab);section.append(scroll);return section
  }
  function additional(t){const section=el('div','tp-rounds');section.id='platzierungsspiele';for(const r of t.rounds||[])section.append(fixtures(r,true));return section}
@@ -68,7 +69,7 @@
    document.title=t.name+' · '+t.season+' | NTC 93';
    const header=el('div','tp-detail-header');header.append(link('← Alle Mannschaften','/mannschaften/?saison='+encodeURIComponent(t.season),'tp-back'),el('div','tp-kicker',t.season+' · '+t.category),el('h1','',t.name),el('p','tp-muted',t.group));
    const metrics=el('div','tp-metrics');metrics.append(metric('Tabellenplatz',t.rank??'–'),metric('Tabellenpunkte',t.points||'–'),metric('Begegnungen',t.table.find(r=>r.own)?.played||'–'));
-   const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark)header.append(mark);if(down)header.append(down);header.append(metrics);if(t.rounds?.length)header.append(link('↓ Platzierungsspiele / weitere Runden','#platzierungsspiele','tp-round-label tp-round-jump'));fragment.append(header,table(t),fixtures(t),additional(t),sourceLine(t));root.replaceChildren(fragment);return
+   const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark)header.append(mark);if(down)header.append(down);header.append(metrics);if(t.rounds?.length)header.append(link('↓ Platzierungsspiele / weitere Runden','#platzierungsspiele','tp-round-label tp-round-jump'));fragment.append(header,table(t),fixtures(t,false,!!t.rounds?.length),additional(t),sourceLine(t));root.replaceChildren(fragment);return
   }
   if(!data.seasons.includes(season))season=data.seasons[0]||'';
   const pool=all.filter(t=>t.season===season);
