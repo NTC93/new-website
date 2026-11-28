@@ -29,7 +29,9 @@
   svg.append(arrow);mark.append(svg);return mark
  }
  function table(t){
-  const section=el('section','tp-section');section.append(el('h2','','Gruppentabelle'),el('p','tp-muted',t.group));
+  const section=el('section','tp-section');section.append(el('h2','',t.placement?'Tabelle der Platzierungsrunde':'Gruppentabelle'),el('p','tp-muted',t.group));
+  if(t.status==='cached')section.append(el('p','tp-muted','Letzter erfolgreicher Datenabruf'+(t.data_updated?' vom '+new Intl.DateTimeFormat('de-DE',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Berlin'}).format(new Date(t.data_updated)):'')+'; Aktualisierung vorübergehend nicht verfügbar.'));
+  if(t.placement&&!t.table.length){section.append(el('p','tp-muted',t.status==='unavailable'?'Platzierungsrunde momentan nicht abrufbar.':'Platzierungsspiele – keine eigene Gruppentabelle.'),link('Original bei nuLiga ↗',t.group_url));return section}
   if(!t.table.length){section.append(el('p','tp-empty','Gruppentabelle momentan nicht verfügbar.'),link('Tabelle bei nuLiga öffnen ↗',t.group_url));return section}
   const cols=[['rank','Rang'],['name','Mannschaft'],['played','B'],['wins','S'],['draws','U'],['losses','N'],['points','Punkte'],['match_points','Matches'],['sets','Sätze'],['games','Spiele']];
   const scroll=el('div','tp-scroll');scroll.tabIndex=0;scroll.setAttribute('aria-label','Gruppentabelle, horizontal scrollbar');
@@ -40,33 +42,36 @@
   tab.append(tbody);scroll.append(tab);section.append(scroll,el('p','tp-legend','B = Begegnungen · S = Siege · U = Unentschieden · N = Niederlagen. Goldener Pfeil: Aufstieg / Aufstiegsplatz. Roter Pfeil: Abstieg / Abstiegsplatz. Die ausgewählte NTC-Mannschaft ist hervorgehoben.'));
   return section;
  }
- function fixtures(t){
-  const section=el('section','tp-section');section.append(el('h2','','Spielplan & Ergebnisse'));
+ function fixtures(t,extra=false){
+  const section=el('section','tp-section');section.append(el('h2','',extra||t.placement?'Platzierungsspiele / weitere Runde':'Spielplan & Ergebnisse'));
+  if(extra||t.placement)section.append(el('p','tp-muted',t.group+(t.table.length?'':' · keine eigene Gruppentabelle')));
+  if(extra&&t.table.length)section.append(table(t));
   if(!t.matches.length){section.append(el('p','tp-empty','Noch keine Begegnungen verfügbar.'),link('Spielplan bei nuLiga ↗',t.group_url));return section}
   const scroll=el('div','tp-scroll');scroll.tabIndex=0;const tab=el('table','tp-table tp-fixtures'),h=el('thead'),hr=el('tr');
-  for(const x of ['Datum','Uhrzeit','Spielort','Gegner','Ergebnis']){const th=el('th','',x);th.scope='col';hr.append(th)}h.append(hr);tab.append(h);
+  for(const x of [...(extra||t.placement?['Runde / Spiel']:[]),'Datum','Uhrzeit','Spielort','Gegner','Ergebnis']){const th=el('th','',x);th.scope='col';hr.append(th)}h.append(hr);tab.append(h);
   const tbody=el('tbody');
-  for(const m of t.matches){const tr=el('tr',!m.score&&m.date>=today()?'tp-upcoming':'');tr.append(el('td','',fmt(m.date)),el('td','',m.time||'–'),el('td','',m.home?'Heim':'Auswärts'),el('td','',(m.home?'gg. ':'bei ')+m.opponent));const td=el('td');if(Array.isArray(m.score)){const style=m.score[0]>m.score[1]?'win':m.score[0]<m.score[1]?'loss':'draw';const badge=el('span','tp-score '+style,m.score.join(':'));if(m.report){const a=link('',m.report);a.setAttribute('aria-label','Spielbericht '+m.opponent);a.append(badge);td.append(a)}else td.append(badge)}else td.append(el('span','tp-muted','–'));tr.append(td);tbody.append(tr)}
+  for(const m of t.matches){const tr=el('tr',!m.score&&m.date>=today()?'tp-upcoming':'');if(extra||t.placement)tr.append(el('td','',m.round_label||'Platzierungsspiel'));tr.append(el('td','',fmt(m.date)),el('td','',m.time||'–'),el('td','',m.home?'Heim':'Auswärts'),el('td','',(m.home?'gg. ':'bei ')+m.opponent));const td=el('td');if(Array.isArray(m.score)){const style=m.score[0]>m.score[1]?'win':m.score[0]<m.score[1]?'loss':'draw';const badge=el('span','tp-score '+style,m.score.join(':'));if(m.report){const a=link('',m.report);a.setAttribute('aria-label','Spielbericht '+m.opponent);a.append(badge);td.append(a)}else td.append(badge)}else td.append(el('span','tp-muted','–'));tr.append(td);tbody.append(tr)}
   tab.append(tbody);scroll.append(tab);section.append(scroll);return section
  }
- function card(t){const a=link('',teamURL(t),'tp-card');const head=el('div','tp-card-top');head.append(el('strong','',t.name),el('span','tp-card-arrow','→'));a.append(head,el('div','tp-muted',t.group));const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark){a.classList.add('tp-card-promotion');a.append(mark)}if(down){a.classList.add('tp-card-relegation');a.append(down)}const numbers=el('div','tp-card-numbers');numbers.append(metric('Tabellenplatz',t.rank??'–'),metric('Punkte',t.points||'–'));a.append(numbers);return a}
+ function additional(t){const section=el('div','tp-rounds');for(const r of t.rounds||[])section.append(fixtures(r,true));return section}
+ function card(t){const a=link('',teamURL(t),'tp-card');const head=el('div','tp-card-top');head.append(el('strong','',t.name),el('span','tp-card-arrow','→'));a.append(head,el('div','tp-muted',t.group));if(t.rounds?.length)a.append(el('span','tp-muted','Mit Platzierungsspielen / weiterer Runde'));const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark){a.classList.add('tp-card-promotion');a.append(mark)}if(down){a.classList.add('tp-card-relegation');a.append(down)}const numbers=el('div','tp-card-numbers');numbers.append(metric('Tabellenplatz',t.rank??'–'),metric('Punkte',t.points||'–'));a.append(numbers);return a}
  function render(){
   if(!data)return;
   const fragment=document.createDocumentFragment(),all=data.teams;
   if(mode==='detail'){
-   const t=all.find(x=>x.id===selected);
+   const t=all.find(x=>x.id===selected||x.aliases?.includes(selected));
    if(!t){fragment.append(el('h1','','Mannschaft nicht verfügbar'),el('p','tp-empty','Dieser Eintrag ist zurzeit nicht verfügbar.'),link('← Alle Mannschaften','/mannschaften/'));root.replaceChildren(fragment);return}
    document.title=t.name+' · '+t.season+' | NTC 93';
    const header=el('div','tp-detail-header');header.append(link('← Alle Mannschaften','/mannschaften/?saison='+encodeURIComponent(t.season),'tp-back'),el('div','tp-kicker',t.season+' · '+t.category),el('h1','',t.name),el('p','tp-muted',t.group));
    const metrics=el('div','tp-metrics');metrics.append(metric('Tabellenplatz',t.rank??'–'),metric('Tabellenpunkte',t.points||'–'),metric('Begegnungen',t.table.find(r=>r.own)?.played||'–'));
-   const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark)header.append(mark);if(down)header.append(down);header.append(metrics);fragment.append(header,table(t),fixtures(t),sourceLine(t));root.replaceChildren(fragment);return
+   const mark=promotion(t.promotion_status),down=relegation(t.relegation_status);if(mark)header.append(mark);if(down)header.append(down);header.append(metrics);fragment.append(header,table(t),fixtures(t),additional(t),sourceLine(t));root.replaceChildren(fragment);return
   }
   if(!data.seasons.includes(season))season=data.seasons[0]||'';
   const pool=all.filter(t=>t.season===season);
   if(mode==='standings'){
    if(!pool.some(t=>t.id===selected))selected=pool[0]?.id||'';
    const filters=el('div','tp-filters');filters.append(select('Saison',data.seasons.map(value=>({value})),season,v=>{season=v;selected='';render()}),select('Mannschaft',pool.slice().sort(sort).map(t=>({value:t.id,label:t.name+' · '+t.group})),selected,v=>{selected=v;render()}));fragment.append(filters);
-   const t=pool.find(x=>x.id===selected);if(t){fragment.append(table(t),link('Zur Mannschaftsdetailseite →',teamURL(t),'tp-back'),sourceLine(t))}else fragment.append(el('p','tp-empty','Keine Tabellen verfügbar.'));
+   const t=pool.find(x=>x.id===selected);if(t){fragment.append(table(t),additional(t),link('Zur Mannschaftsdetailseite →',teamURL(t),'tp-back'),sourceLine(t))}else fragment.append(el('p','tp-empty','Keine Tabellen verfügbar.'));
    root.replaceChildren(fragment);return
   }
   const filters=el('div','tp-filters');filters.append(select('Saison',data.seasons.map(value=>({value})),season,v=>{season=v;render()}));
