@@ -50,6 +50,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'rm -f site/matches-previous.json' EXIT
+          curl --fail --silent --show-error --connect-timeout 8 --max-time 25 "https://neu.ntc93.de/matches.json?previous=$GITHUB_RUN_ID" -o site/matches-previous.json || rm -f site/matches-previous.json
           if ! python3 tools/matchcenter.py; then
             echo "::warning::nuLiga refresh failed. Existing remote match data remains unchanged."
             [[ "$GITHUB_EVENT_NAME" != schedule ]] || exit 1
@@ -77,7 +79,7 @@ jobs:
           node --check site/club-enhancements.js
           node --check site/matchcenter.js
           node --check site/teams.js
-          python3 -m py_compile tools/teams.py
+          python3 -m py_compile tools/teams.py tools/matchcenter.py tools/match_reports.py
           python3 -m py_compile tools/import_pages.py tools/archive_import.py tools/localize.py
       - name: Restore downloaded public media
         if: github.event_name != 'schedule'
