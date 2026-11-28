@@ -150,7 +150,7 @@ function safe_url(string $s):bool{return $s==='' || (str_starts_with($s,'/')&&!s
 function shell(string $title,string $content,?array $u=null): never {global $types;
  header('Content-Type: text/html; charset=utf-8');
  echo '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.e($title).' | NTC Redaktion</title><link rel="stylesheet" href="/admin/admin.css"></head><body>';
- if($u){echo '<aside class="side"><a class="brand" href="/admin/"><strong>NTC 93</strong><small>Redaktion & Verwaltung</small></a><nav><a href="/admin/">Übersicht</a>';foreach($types as $key=>$t)echo '<a href="?area='.e($key).'">'.e($t[0]).'</a>';echo '<a href="?area=media">Medienbibliothek</a><a href="?area=matchcenter">Matchcenter</a>';if($u['role']==='admin')echo '<a href="?area=users">Benutzer & Rechte</a><a href="?area=log">Änderungsprotokoll</a>';echo '</nav><a class="public" href="/">Website ansehen ↗</a></aside><main><header><div><span class="overline">NTC 93 · REDAKTION</span><h1>'.e($title).'</h1></div><form method="post">'.csrf().'<input type="hidden" name="action" value="logout"><span>'.e($u['name']).' · '.e($u['role']).'</span> <button class="secondary">Abmelden</button></form></header>';}
+ if($u){echo '<aside class="side"><a class="brand" href="/admin/"><strong>NTC 93</strong><small>Redaktion & Verwaltung</small></a><nav><a href="/admin/">Übersicht</a>';foreach($types as $key=>$t)echo '<a href="?area='.e($key).'">'.e($t[0]).'</a>';echo '<a href="?area=media">Medienbibliothek</a><a href="?area=matchcenter">Matchcenter</a>';if($u['role']==='admin')echo '<a href="?area=contact">Kontaktformular</a><a href="?area=users">Benutzer & Rechte</a><a href="?area=log">Änderungsprotokoll</a>';echo '</nav><a class="public" href="/">Website ansehen ↗</a></aside><main><header><div><span class="overline">NTC 93 · REDAKTION</span><h1>'.e($title).'</h1></div><form method="post">'.csrf().'<input type="hidden" name="action" value="logout"><span>'.e($u['name']).' · '.e($u['role']).'</span> <button class="secondary">Abmelden</button></form></header>';}
  else echo '<main class="auth"><h1>'.e($title).'</h1>';
  echo $content.'</main></body></html>';exit;
 }
@@ -196,7 +196,34 @@ if($admin && $_SERVER['REQUEST_METHOD']==='GET' && is_file(__DIR__.'/import-cont
 
 if($action==='logout'){$_SESSION=[];session_destroy();redirect();}
 $area=(string)($_GET['area']??'');$id=(int)($_GET['id']??0);
-if(in_array($area,['users','log','settings','menus'],true)&&!$admin)stop(403,'Keine Berechtigung.');
+if(in_array($area,['users','log','settings','menus','contact'],true)&&!$admin)stop(403,'Keine Berechtigung.');
+if($action==='contact_save'&&!$admin)stop(403,'Keine Berechtigung.');
+if($area==='contact'||$action==='contact_save'){
+ if(!is_file(__DIR__.'/private/contact-routing.php'))stop(503,'Kontaktformular wird eingerichtet.');
+ require_once __DIR__.'/private/contact-routing.php';
+ try{
+  contact_init($db);
+  if($action==='contact_save'){
+   $values=[];
+   foreach(contact_defaults() as $key=>$v){
+    if($key==='general')continue;
+    $raw=$_POST['recipient'][$key]??null;
+    if(!is_string($raw))throw new RuntimeException('Bitte alle Empfängerfelder prüfen.');
+    $address=trim($raw);
+    if($address!==''&&!contact_address($address))throw new RuntimeException('Ungültige E-Mail-Adresse bei '.$v[0].'.');
+    $values[$key]=$address;
+   }
+   $db->beginTransaction();
+   foreach($values as $key=>$address)run('INSERT INTO cms_contact_routes(route_key,recipient) VALUES(?,?) ON DUPLICATE KEY UPDATE recipient=VALUES(recipient)',[$key,$address]);
+   audit($uid,'Kontaktformular: Empfänger geändert','Funktionsadressen');
+   $db->commit();redirect('?area=contact&saved=1');
+  }
+ }catch(Throwable $ex){if($db->inTransaction())$db->rollBack();$err=$ex instanceof RuntimeException&&!($ex instanceof PDOException)?$ex->getMessage():'Kontakt-Einstellungen konnten nicht gespeichert werden.';}
+ $body=($err?'<p class="error">'.e($err).'</p>':'').(isset($_GET['saved'])?'<p class="panel">Empfänger gespeichert.</p>':'').'<div class="panel"><h2>Weiterleitung der Anfragen</h2><p>Jede Anfrage geht an <strong>info@ntc93.de</strong>. Die hier eingetragene Adresse erhält eine zusätzliche Kopie. Ein leeres Feld bedeutet: nur Info.</p><form method="post" action="?area=contact">'.csrf().'<input type="hidden" name="action" value="contact_save">';
+ foreach(contact_routes($db) as $key=>$v){if($key==='general')continue;$body.='<label>'.e($v[0]).'<input type="email" name="recipient['.e($key).']" value="'.e($v[1]).'" maxlength="254"></label>';}
+ $body.='<button>Empfänger speichern</button></form></div><div class="panel"><h2>Versand</h2><p>Absender: info@ntc93.de. Antworten gehen direkt an die angegebene E-Mail-Adresse des Besuchers. Anfragen werden nicht zusätzlich im CMS gespeichert.</p><a href="/anfahrt/#kontaktformular" target="_blank" rel="noopener">Kontaktformular öffnen ↗</a></div>';
+ shell('Kontaktformular',$body,$u);
+}
 if($action==='save' || $action==='archive'){
  $kind=(string)($_POST['kind']??'');$eid=(int)($_POST['id']??0);
  if(!isset($types[$kind])||(!$admin&&in_array($kind,['settings','menus'],true)))stop(403,'Keine Berechtigung.');
