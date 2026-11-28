@@ -58,7 +58,7 @@
 .mc-game-labels span:first-child{text-align:left}.mc-game-labels span:last-child{text-align:right}
 .mc-game{border-bottom:1px solid #dce7df;padding:12px 5px;line-height:1.35}
 .mc-game-side{font-size:13px;font-weight:550;min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:3px}
-.mc-game-side.opponent{text-align:right}
+.mc-game-side.left{text-align:left}.mc-game-side.right{text-align:right}
 .mc-game-side.winner{font-weight:800;color:#17603e}
 .mc-game-middle{text-align:center}.mc-game-middle small{font-size:10px;color:#526963;display:block;margin-bottom:5px}
 .mc-game-sets{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px}
