@@ -68,3 +68,16 @@
 .tp-placement-section{border-top:3px solid #d5bd62;padding-top:16px}
 .tp-rounds{scroll-margin-top:24px}
 .tp-placement-section .tp-fixtures{min-width:690px}
+
+/* Placement fixtures are readable without horizontal table scrolling. */
+.tp-placement-summary[hidden]{display:none}
+.tp-placement-summary{scroll-margin-top:24px;padding:18px 20px;border:1px solid #e6d9aa;border-top:3px solid #d5bd62;border-radius:4px;background:#fcfaf2;margin:20px 0 28px}
+.tp-placement-summary h2{font-size:21px;margin:0 0 12px}
+.tp-placement-group+.tp-placement-group{margin-top:16px;border-top:1px solid #e6d9aa;padding-top:12px}
+.tp-placement-group-title{font-size:13px;font-weight:650;color:#755817;margin:0 0 7px}
+.tp-placement-match{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
+.tp-placement-info{display:grid;min-width:0;gap:4px;overflow-wrap:anywhere;line-height:1.4}
+.tp-placement-info strong{font-size:15px}
+.tp-placement-meta{font-size:12px;font-weight:600;color:#526960}
+.tp-placement-match>.tp-score,.tp-placement-match>a{flex-shrink:0}
+@media(max-width:600px){.tp-placement-summary{padding:14px}.tp-placement-info strong{font-size:14px}}
