@@ -69,6 +69,9 @@ jobs:
         run: |
           php -l site/admin/index.php
           php -l site/admin/import-content.php
+          php -l site/admin/private/contact-routing.php
+          php -l site/contact-api.php
+          node --check site/contact.js
           python3 -m py_compile tools/export_cms.py
           node --check site/cms-public.js
           node --check site/club-enhancements.js
@@ -276,7 +279,11 @@ jobs:
           upload "$RUNNER_TEMP/private-check.txt" admin/private/private-check.txt
           status=$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' "https://neu.ntc93.de/admin/private/private-check.txt?run=$GITHUB_RUN_ID")
           [[ "$status" == 403 ]] || { echo 'Private directory not protected; CMS content seed not uploaded.'; exit 1; }
+          upload site/admin/private/contact-routing.php admin/private/contact-routing.php
           upload site/admin/private/content-seed.json admin/private/content-seed.json
+          # Verify form initialization without sending a test email.
+          curl --fail --silent --show-error --max-time 30 'https://neu.ntc93.de/contact-api.php' -o "$RUNNER_TEMP/contact-init.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("ok") and len(d.get("token", ""))==64' "$RUNNER_TEMP/contact-init.json"
           upload "$RUNNER_TEMP/next-manifest.json" ntc-deploy-manifest.json
           curl --fail --silent --show-error --max-time 30 \
             "https://neu.ntc93.de/ntc-deploy-manifest.json?run=$GITHUB_RUN_ID" \
