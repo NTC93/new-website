@@ -29,3 +29,42 @@
 .match-running{border-left:3px solid #24844d;padding-left:9px}
 .match-running:hover{background:#e2ebe2}
 @media(max-width:720px){.match-status strong{font-size:12px}.match-status small{font-size:10px}.match-running{padding-left:6px}}
+
+/* Native NTC match report overlay; no iframe, no separate browser tab. */
+.match-result-button{width:100%;border:0;border-bottom:1px solid #d3ded5;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.match-result-button .match-score{position:relative;padding-right:20px}
+.match-result-button .match-score:after{content:'›';position:absolute;right:5px;font-weight:600;opacity:.7}
+.mc-report{box-sizing:border-box;width:min(760px,calc(100% - 28px));max-width:760px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:0;border:1px solid #d2e1d8;border-radius:10px;background:white;color:#19332f;box-shadow:0 16px 70px #112c28aa;overflow:auto;overscroll-behavior:contain}
+.mc-report::backdrop{background:#102e2be0}
+.mc-report-bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 22px;background:#073e40;color:white;border-bottom:3px solid #f6dd3b}
+.mc-report-bar h2{margin:0;font-size:20px;font-weight:750;letter-spacing:-.02em;color:white}
+.mc-report-close{display:grid;place-items:center;width:40px;height:40px;border:1px solid #ffffff50;border-radius:5px;background:transparent;color:white;font:28px/1 system-ui;cursor:pointer}
+.mc-report-close:hover{background:#ffffff20}
+.mc-report-content{padding:20px 24px 24px}
+.mc-report-meta{font-size:12px;color:#526963;font-weight:650;text-align:center;margin:0 0 15px}
+.mc-report-scoreboard{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;background:#edf5f0;padding:20px 15px;border-radius:6px;border:1px solid #d4e4da}
+.mc-report-team{min-width:0;text-align:center;overflow-wrap:anywhere;line-height:1.35}
+.mc-report-team small{display:block;color:#526963;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.mc-report-team strong{font-size:clamp(14px,2.4vw,20px)}
+.mc-report-team.ntc strong{color:#006668}
+.mc-report-total{font-weight:850;font-size:clamp(28px,6vw,46px);line-height:1.1;padding:10px 12px;border-radius:5px;font-variant-numeric:tabular-nums;background:#e1e9e3;white-space:nowrap}
+.mc-report-total.win{background:#d6eadd;color:#17603e}.mc-report-total.loss{background:#f6e2de;color:#a03939}.mc-report-total.draw{color:#405951}
+.mc-report-section{margin-top:24px}
+.mc-report-section-head{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #c1d9cb;padding-bottom:8px;gap:10px}
+.mc-report-section-head h3{margin:0;font-size:17px;font-weight:780}
+.mc-report-subtotal{font-weight:800;font-size:18px;color:#006668}
+.mc-game,.mc-game-labels{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,1.05fr) minmax(0,1fr);gap:10px;align-items:center}
+.mc-game-labels{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:750;color:#526963;padding:9px 5px 5px;text-align:center}
+.mc-game-labels span:first-child{text-align:left}.mc-game-labels span:last-child{text-align:right}
+.mc-game{border-bottom:1px solid #dce7df;padding:12px 5px;line-height:1.35}
+.mc-game-side{font-size:13px;font-weight:550;min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:3px}
+.mc-game-side.opponent{text-align:right}
+.mc-game-side.winner{font-weight:800;color:#17603e}
+.mc-game-middle{text-align:center}.mc-game-middle small{font-size:10px;color:#526963;display:block;margin-bottom:5px}
+.mc-game-sets{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px}
+.mc-game-sets span{display:inline-block;padding:3px 6px;background:#edf3ee;border-radius:3px;white-space:nowrap;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.mc-report-empty{padding:16px;background:#f5f7f5;border:1px solid #dbe5dc;border-radius:4px;color:#405951;margin:20px 0}
+.mc-report-note{font-size:12px;color:#526963;margin:18px 0 0}
+.mc-report-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:#526963;border-top:1px solid #dbe5dc;padding-top:12px;margin-top:20px}
+.mc-report-foot a{color:#006668;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:540px){.mc-report{width:calc(100% - 14px);max-height:calc(100dvh - 16px)}.mc-report-bar{padding:10px 14px}.mc-report-content{padding:14px 12px 18px}.mc-report-scoreboard{gap:7px;padding:14px 7px}.mc-report-total{padding:8px}.mc-game,.mc-game-labels{gap:5px;grid-template-columns:minmax(0,1fr) minmax(82px,.85fr) minmax(0,1fr)}.mc-game-side{font-size:12px}.mc-game-sets span{font-size:12px;padding:3px 4px}.mc-game-labels{font-size:9px}}
