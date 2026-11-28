@@ -3,30 +3,67 @@ const root=document.querySelector('[data-matchcenter]');if(!root)return;
 const full=root.dataset.matchcenter==='full', source='https://tvbb.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubMeetings?club=36381';
 const q=s=>root.querySelector(s),el=(tag,cls,value)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=value;return e};
 const localDay=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-let data=null,mode='all',pending=false,lastCheck=0,renderKey='',renderDay='';
+let data=null,mode='all',pending=false,lastCheck=0,renderKey='',renderDay='',statusKey='';
+const berlinClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+const SIX_HOURS=6*60*60*1000;
+const starts=new Map();
+function berlinStart(m){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(m.date||'')||!/^\d{1,2}:\d{2}$/.test(m.time||''))return null;
+ const key=m.date+'T'+m.time;if(starts.has(key))return starts.get(key);
+ const [y,mo,d]=m.date.split('-').map(Number),[h,mi]=m.time.split(':').map(Number);
+ if(h>23||mi>59)return null;
+ const wall=Date.UTC(y,mo-1,d,h,mi);let instant=wall;
+ // Convert the Berlin local start into an actual UTC instant, including DST.
+ for(let i=0;i<3;i++){
+  const p=Object.fromEntries(berlinClock.formatToParts(new Date(instant)).map(x=>[x.type,x.value]));
+  const observed=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour%24,+p.minute,+p.second);
+  const correction=wall-observed;if(!correction)break;instant+=correction;
+ }
+ starts.set(key,instant);return instant;
+}
+function state(m,now,day){
+ if(Array.isArray(m.score))return 'scored';
+ const start=berlinStart(m);
+ if(start===null)return m.date<day?'ended':'upcoming';
+ if(now<start)return 'upcoming';
+ return now<start+SIX_HOURS?'running':'ended';
+}
+function currentStates(now=Date.now(),day=localDay()){return data?data.matches.map(m=>state(m,now,day)).join('|'):''}
+function updateClock(){
+ if(!data)return;
+ const day=localDay();if(day!==renderDay||currentStates(Date.now(),day)!==statusKey)display();
+}
 function dateLabel(m){const d=m.date.split('-');return d[2]+'.'+d[1]+'.'+(full?d[0]:'')}
 function external(a,url){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}
-function row(m,result){
- const a=el('a','match-row');external(a,m.report||source);
+function row(m,status){
+ const a=el('a','match-row'+(status==='running'?' match-running':status==='ended'?' match-ended':''));external(a,m.report||source);
  const info=el('div','match-info'),meta=el('span','match-meta');
  const day=el('time','match-date',dateLabel(m));day.dateTime=m.date;
  meta.append(day,el('span','match-location',m.home?'Heim':'Auswärts'),el('span','match-league',m.league||''));
  info.append(meta,el('strong','match-team',m.team),el('span','match-opponent',(m.home?'gg. ':'bei ')+(m.opponent||'')));a.append(info);
- if(result){const score=m.score;const c=score[0]>score[1]?'win':score[0]===score[1]?'draw':'loss';const badge=el('div','match-score '+c,score.join(':'));badge.setAttribute('aria-label',(c==='win'?'Sieg':c==='loss'?'Niederlage':'Unentschieden')+' '+score.join(' zu '));a.append(badge)}
+ if(status==='scored'){const score=m.score;const c=score[0]>score[1]?'win':score[0]===score[1]?'draw':'loss';const badge=el('div','match-score '+c,score.join(':'));badge.setAttribute('aria-label',(c==='win'?'Sieg':c==='loss'?'Niederlage':'Unentschieden')+' '+score.join(' zu '));a.append(badge)}
+ else if(status==='running'){
+  const t=el('div','match-status live');const label=el('strong','match-live-label','Laufend');label.prepend(el('span','match-live-dot'));t.append(label,el('small','','seit '+m.time+' Uhr'));t.title='Status anhand der angesetzten Spielzeit (6 Stunden)';a.append(t);
+ }
+ else if(status==='ended'){
+  const t=el('div','match-status awaiting');t.append(el('strong','','Beendet'),el('small','','Ergebnis offen'));t.title='Spielzeit abgelaufen; Ergebnis bei nuLiga noch nicht eingetragen';a.append(t);
+ }
  else{const t=el('div','match-time');t.append(el('strong','',m.time||'–'),el('span','',m.time?'Uhr':'offen'));a.append(t)}
  return a;
 }
 function display(){
  if(!data)return;
- const today=localDay();renderDay=today;
+ const today=localDay(),now=Date.now();renderDay=today;statusKey=currentStates(now,today);
  const team=q('[data-team]')?.value||'',matches=data.matches.filter(m=>(mode!=='home'||m.home)&&(!team||m.team===team));
- const results=matches.filter(m=>Array.isArray(m.score)).sort((a,b)=>(b.date+(b.time||'')).localeCompare(a.date+(a.time||'')));
- const upcoming=matches.filter(m=>!m.score&&m.date>=today).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+ const rows=matches.map(m=>({match:m,status:state(m,now,today)}));
+ const order=(a,b)=>(a.match.date+(a.match.time||'')).localeCompare(b.match.date+(b.match.time||''));
+ const results=rows.filter(x=>x.status==='scored'||x.status==='ended').sort((a,b)=>order(b,a));
+ const upcoming=rows.filter(x=>x.status==='running'||x.status==='upcoming').sort((a,b)=>(a.status==='running'?0:1)-(b.status==='running'?0:1)||order(a,b));
  for(const [target,rows,isResult] of [['[data-results]',results,true],['[data-fixtures]',upcoming,false]]){
   const box=q(target);if(!box)continue;
   const visible=full?rows:rows.slice(0,3);
   const fragment=document.createDocumentFragment();
-  for(const m of visible)fragment.append(row(m,isResult));
+  for(const x of visible)fragment.append(row(x.match,x.status));
   if(!visible.length)fragment.append(el('p','match-empty',isResult?'Keine Ergebnisse vorhanden.':'Keine kommenden Begegnungen im aktuellen Zeitraum.'));
   box.replaceChildren(fragment);
  }
@@ -58,10 +95,10 @@ async function load(force=false){
   const nextKey=JSON.stringify(next.matches);
   const changed=nextKey!==renderKey||renderDay!==localDay();
   data=next;renderKey=nextKey;updateStamp();
-  if(changed){updateTeams();display()}
+  if(changed){starts.clear();updateTeams();display()}else updateClock();
  }catch(e){
   updateStamp(true);
-  if(data){if(renderDay!==localDay())display();return}
+  if(data){updateClock();return}
   for(const target of ['[data-results]','[data-fixtures]']){
    const box=q(target);if(!box)continue;
    const a=el('a','match-empty','Begegnungen bei nuLiga öffnen ↗');external(a,source);box.replaceChildren(a);
@@ -73,7 +110,9 @@ root.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{
 load(true);
 // Refresh without reloading the page, resetting filters or interrupting the hero.
 setInterval(()=>load(true),5*60*1000);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')load()});
-window.addEventListener('focus',()=>load());
+// Update the time-dependent status independently of the nuLiga data refresh.
+setInterval(updateClock,15000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){updateClock();load()}});
+window.addEventListener('focus',()=>{updateClock();load()});
 window.addEventListener('online',()=>load(true));
 })();
