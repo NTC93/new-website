@@ -529,11 +529,13 @@ print('Drone video status:',json.dumps(DRONE_REPORT,ensure_ascii=False),flush=Tr
 source.main.append(BeautifulSoup(sponsor_band(),'html.parser'))
 
 # Club calendar fallback stays usable even before the CMS database is available.
-def club_event_list(compact=False):
+def event_seed():
     # Read the same checked-in seed as the CMS to keep the offline fallback in sync.
     raw=(ROOT/'admin/index.php').read_text(encoding='utf-8')
     match=re.search(r"\$eventSeed=json_decode\('([^\n]*)',true\);",raw)
-    items=json.loads(match.group(1)) if match else []
+    return json.loads(match.group(1)) if match else []
+def club_event_list(compact=False):
+    items=event_seed()
     from datetime import date as dt_date
     today=dt_date.today().isoformat()
     months=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez']
@@ -548,7 +550,7 @@ def club_event_list(compact=False):
         meta=' · '.join(v for v in [(d.get('time','')+' Uhr') if d.get('time') else '',d.get('venue','')] if v)
         status=d.get('status','')
         esc=lambda v:html.escape(str(v),quote=True)
-        rows.append('<article class="club-event" data-event-date="'+esc(start)+'" data-event-end="'+esc(end)+'"><div class="club-event-date"><strong>'+esc(day)+'</strong><span>'+esc(month)+'</span></div><div class="club-event-copy"><h3>'+esc(event['title'])+'</h3>'+('<span class="club-event-status">'+esc(status)+'</span>' if status and status!='Bestätigt' else '')+'<p class="club-event-meta">'+esc(meta)+'</p>'+('' if compact else '<p>'+esc(d.get('body',''))+'</p>')+('<a href="'+esc(d['link'])+'">Details →</a>' if d.get('link') else '')+'</div></article>')
+        rows.append('<article class="club-event" data-event-date="'+esc(start)+'" data-event-end="'+esc(end)+'"><div class="club-event-date"><strong>'+esc(day)+'</strong><span>'+esc(month)+'</span></div><div class="club-event-copy"><h3><a class="club-event-title" href="/termine/detail/?slug='+esc(event['slug'])+'">'+esc(event['title'])+'</a></h3>'+('<span class="club-event-status">'+esc(status)+'</span>' if status and status!='Bestätigt' else '')+'<p class="club-event-meta">'+esc(meta)+'</p>'+('' if compact else '<p>'+esc(d.get('body',''))+'</p>')+'<a class="club-event-more" href="/termine/detail/?slug='+esc(event['slug'])+'">Details →</a>'+'</div></article>')
     if compact:rows=rows[:4]
     return '<div class="club-event-list" data-club-events="'+('compact' if compact else 'full')+'">'+''.join(rows)+'</div>'
 club_events_css="""
@@ -992,6 +994,13 @@ out=ROOT/'termine/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_page+'</main>'+footer+'<script>'+menu_js+calendar_script+'</script></body></html>',encoding='utf-8')
 
 
+# A single CMS-driven internal detail template with a stable URL for every event.
+h=copy.deepcopy(head);h.title.string='Termindetails | NTC 93'
+event_detail='<div class="club-event-page"><div class="breadcrumbs"><a href="/">Startseite</a> › <a href="/termine/">Termine</a> › Details</div><article id="club-event-detail" class="club-event-detail"><p class="club-event-empty">Termin wird geladen …</p><noscript><p>Bitte aktiviere JavaScript, um die Termindetails anzuzeigen.</p><a href="/termine/">Zur Terminübersicht</a></noscript></article></div>'
+out=ROOT/'termine/detail/index.html';out.parent.mkdir(parents=True,exist_ok=True)
+out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page">'+event_detail+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
+(ROOT/'event-fallback.json').write_text(json.dumps({'items':event_seed()},ensure_ascii=False),encoding='utf-8')
+
 # Replace photo-based legacy team pages with the nuLiga data portal.
 # Bust browser caches when the team portal assets change.
 def team_asset(name):
@@ -1031,13 +1040,13 @@ if privacy_path.is_file():
             target.append(notice)
             privacy_path.write_text(str(privacy),encoding='utf-8')
 # Version Matchcenter assets on both the homepage and full page.
-for path in (ROOT/'index.html',ROOT/'matchcenter/index.html'):
+for path in (ROOT/'index.html',ROOT/'matchcenter/index.html',ROOT/'termine/index.html',ROOT/'termine/detail/index.html'):
     if not path.is_file():continue
     page=BeautifulSoup(path.read_text(encoding='utf-8'),'html.parser')
     for tag in page.select('script[src],link[href]'):
         key='src' if tag.name=='script' else 'href'
         value=tag.get(key,'')
-        for name in ('matchcenter.js','matchcenter.css'):
+        for name in ('matchcenter.js','matchcenter.css','cms-public.js','cms-public.css'):
             if value.split('?')[0] in ('/'+name,name):
                 tag[key]=team_asset(name)
     path.write_text(str(page),encoding='utf-8')
