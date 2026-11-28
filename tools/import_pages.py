@@ -567,8 +567,10 @@ if footlinks and not footlinks.find('a',href='/anfahrt/'):
     old=footlinks.find('a',href='mailto:info@ntc93.de')
     if old: old.replace_with(a)
     else: footlinks.insert(0,a)
-    mail=source.new_tag('a',href='mailto:info@ntc93.de');mail.string='E-Mail'
-    footlinks.insert(1,mail)
+if footlinks:
+    for a in list(footlinks.select('a[href^="mailto:"]')):a.decompose()
+    if not footlinks.find('a',href='/anfahrt/#kontaktformular'):
+        a=source.new_tag('a',href='/anfahrt/#kontaktformular');a.string='Kontaktformular';footlinks.insert(1,a)
 foot_address=source.select_one('.foot p')
 if foot_address:
     for text_node in list(foot_address.find_all(string=True)):
@@ -895,7 +897,7 @@ arrival_content='''
     <div class="detail-kicker">Unsere Vereinsanlage</div>
     <h2>Neuenhagener Tennisclub 93 e. V.</h2>
     <address class="arrival-address">Hildesheimer Straße 11–13<br>15366 Neuenhagen bei Berlin</address>
-    <div class="arrival-contact"><a href="tel:+493342203823">03342 203823</a><a href="mailto:info@ntc93.de">info@ntc93.de</a></div>
+    <div class="arrival-contact"><a href="tel:+493342424694">03342 424694</a><a href="#kontaktformular">Nachricht schreiben ↓</a></div>
     <div><a class="detail-action" href="'''+map_url+'''">In Google Maps öffnen ↗</a></div>
   </div>
 </div>
@@ -905,7 +907,32 @@ arrival_content='''
   <div class="arrival-route"><h3>Mit dem Fahrrad</h3><p>Die passende Fahrradroute zur Hildesheimer Straße finden.</p><a href="'''+directions('bicycling')+'''">Fahrradroute planen ↗</a></div>
 </div></section>
 '''
+arrival_content+='''
+<section class="ntc-contact" id="kontaktformular">
+ <div class="detail-kicker">Schreib uns</div><h2>Kontaktformular</h2>
+ <p>Du hast eine Frage zum Verein, zum Spielbetrieb oder zur Tennishalle? Wähle den passenden Bereich aus. Deine Nachricht geht an unsere zentrale Geschäftsstelle und gegebenenfalls zusätzlich an die zuständige Person.</p>
+ <form id="ntc-contact-form" action="/contact-api.php" method="post">
+  <input type="hidden" name="token" value="">
+  <div class="contact-trap" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+  <div class="contact-fields">
+   <label class="contact-wide">Dein Anliegen betrifft *<select name="route" required>
+    <option value="general">Allgemeine Anfrage</option><option value="chair">1. Vorsitzender</option><option value="deputy">2. Vorsitzender</option><option value="sport">Sport &amp; Mannschaften</option><option value="youth">Jugend &amp; Jugendtraining</option><option value="finance">Finanzen &amp; Beiträge</option><option value="hall">Tennishalle &amp; Hallenbetrieb</option>
+   </select></label>
+   <label>Name *<input name="name" autocomplete="name" maxlength="100" required></label>
+   <label>E-Mail *<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+   <label>Telefon (optional)<input name="phone" type="tel" autocomplete="tel" maxlength="50"></label>
+   <label>Betreff *<input name="subject" maxlength="125" required></label>
+   <label class="contact-wide">Deine Nachricht *<textarea name="message" rows="7" minlength="5" maxlength="3000" required></textarea></label>
+  </div>
+  <label class="contact-consent"><input type="checkbox" name="privacy" value="1" required><span>Ich habe die <a href="/datenschutz/">Datenschutzhinweise</a> zur Kenntnis genommen. Meine Angaben werden zur Bearbeitung meiner Anfrage verwendet und an die zuständigen Personen weitergeleitet. *</span></label>
+  <div class="contact-actions"><button type="submit" class="detail-action" disabled>Nachricht senden <span aria-hidden="true">→</span></button><span class="contact-required">* Pflichtfelder</span></div>
+  <p id="contact-status" class="contact-status" role="status" aria-live="polite"></p>
+  <noscript><p>Für dieses Formular muss JavaScript aktiviert sein. Alternativ erreichst du die Geschäftsstelle telefonisch.</p></noscript>
+ </form>
+</section>
+'''
 h=copy.deepcopy(head);h.title.string='Anfahrt & Kontakt | NTC 93'
+h.append(source.new_tag('script',attrs={'src':'/contact.js','defer':''}))
 out=ROOT/'anfahrt/index.html';out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main class="subpage detail-page arrival-page">'+arrival_content+'</main>'+footer+'<script>'+menu_js+'</script></body></html>',encoding='utf-8')
 
@@ -989,6 +1016,16 @@ if mc.is_file():
     mc.write_text(str(page),encoding='utf-8')
 
 # Resolve internal routes and copy all linked legacy media after every page has been rendered.
+# Add the contact-form processing notice to the existing privacy page.
+privacy_path=ROOT/'datenschutz/index.html'
+if privacy_path.is_file():
+    privacy=BeautifulSoup(privacy_path.read_text(encoding='utf-8'),'html.parser')
+    if not privacy.select_one('#datenschutz-kontaktformular'):
+        target=privacy.select_one('.content') or privacy.select_one('main')
+        if target:
+            notice=BeautifulSoup('<section id="datenschutz-kontaktformular"><h2>Kontaktformular</h2><p>Wenn du uns über das Kontaktformular kontaktierst, verarbeiten wir deinen Namen, deine E-Mail-Adresse, gegebenenfalls deine Telefonnummer, den Betreff, den gewählten Zuständigkeitsbereich und deine Nachricht zur Bearbeitung und Beantwortung deiner Anfrage. Deine Angaben werden per E-Mail an die zentrale Geschäftsstelle und, sofern erforderlich, an die für dein Anliegen zuständige Person im Verein übermittelt. Eine zusätzliche Speicherung der Nachricht im Redaktionssystem erfolgt nicht.</p><p>Die Verarbeitung erfolgt zur Durchführung vorvertraglicher oder vertraglicher Maßnahmen (Art. 6 Abs. 1 lit. b DSGVO), soweit einschlägig, ansonsten aufgrund unseres berechtigten Interesses an der Bearbeitung von Anfragen (Art. 6 Abs. 1 lit. f DSGVO). Die Angaben werden gelöscht, sobald sie für die Bearbeitung nicht mehr erforderlich sind, soweit keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p><p>Zum Schutz vor Missbrauch nutzt das Formular ein technisch erforderliches Sitzungscookie sowie einen mit einem geheimen Schlüssel erzeugten Prüfwert der IP-Adresse zur kurzfristigen Begrenzung der Anfragen. Diese Prüfwerte werden nach Ablauf der Schutzfrist bei der nächsten Anfrage bereinigt. Es werden keine externen CAPTCHA-Dienste eingebunden.</p></section>','html.parser')
+            target.append(notice)
+            privacy_path.write_text(str(privacy),encoding='utf-8')
 migration=localize(ROOT)
 
 # Static links receive the policy too, so it works even with JavaScript disabled.
