@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
 import requests
+from match_reports import enrich
 
 URL = 'https://tvbb.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubMeetings?club=36381'
 TEAM = re.compile(r'^Neuenhagener (?:Tennisclub|TC) 93(?:\s+(I{1,3}|IV|V|VI{0,3}|IX|X))?$', re.I)
@@ -75,6 +76,7 @@ def main():
     response=requests.get(URL,timeout=(12,40),headers={'User-Agent':'NTC93 club website / public match schedule'})
     response.raise_for_status()
     rows=parse(BeautifulSoup(response.content,'html.parser'))
+    enrich(rows)
     data={'updated':datetime.now(ZoneInfo('Europe/Berlin')).isoformat(timespec='seconds'),'source':URL,'matches':rows}
     out=Path('site/matches.json');out.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8')
     print(f'{len(rows)} public club fixtures imported')
