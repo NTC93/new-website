@@ -22,7 +22,7 @@ def group_link(url):
     championship=param(url,'championship');group=param(url,'group')
     return BASE+'groupPage?'+urlencode({'championship':championship,'group':group}) if championship and group else url
 def is_placement(name):
-    return bool(re.search(r'platzierung|play[\s-]?off|endrunde|zwischenrunde|finalrunde|halbfinale|viertelfinale',name,re.I))
+    return bool(re.search(r'platzierung|\bum\s+(?:den\s+)?platz\b|\bspiel\s+um\b|\bplatz\s+\d+\b|play[\s-]?off|endrunde|zwischenrunde|finalrunde|halbfinale|viertelfinale',name,re.I))
 def fetch(url):
     r=requests.get(url,timeout=(8,35),headers={'User-Agent':'NTC93 club website / public team standings'})
     r.raise_for_status()
@@ -181,13 +181,21 @@ def merge_rounds(teams):
         if parent['id']!=extra['id']:
             parent.setdefault('aliases',[]).append(extra['id'])
         parent['rounds'].append({k:extra[k] for k in ('group','group_url','table','matches','status','placement')})
+        parent['rounds'][-1].update(team_id=extra['team_id'],championship=extra['championship'],data_updated=extra.get('data_updated',''))
         print('Placement round assigned:',extra['name'],extra['group'],'->',parent['group'],flush=True)
     return main
 def main():
     teams=club_rows(fetch(CLUB))
     urls=sorted({t['group_url']:t['placement'] for t in teams}.items())
     previous=previous_data()
-    old={old_group_key(t):t for t in previous.get('teams',[]) if isinstance(t,dict) and t.get('table')}
+    old={}
+    for t in previous.get('teams',[]):
+        if not isinstance(t,dict):continue
+        if t.get('table') or t.get('matches'):old[old_group_key(t)]=t
+        for extra in t.get('rounds',[]):
+            if not isinstance(extra,dict) or not (extra.get('table') or extra.get('matches')):continue
+            extra=dict(extra,championship=extra.get('championship') or t.get('championship'),team_id=extra.get('team_id') or t.get('team_id'))
+            old[old_group_key(extra)]=extra
     with ThreadPoolExecutor(max_workers=2) as pool:
         groups={u:(data,err) for u,data,err in pool.map(get_group,urls)}
     ok=0
@@ -200,7 +208,7 @@ def main():
                     if k in saved:team[k]=saved[k]
                 team['status']='cached'
                 team['data_updated']=saved.get('data_updated') or previous.get('updated','')
-                ok+=1
+                if team['table']:ok+=1
                 print('::warning::Group refresh failed, last valid data retained:',team['name'],team['group'],err)
             else:
                 team['status']='unavailable'
@@ -244,7 +252,15 @@ def main():
             item={'round_label':f.get('round_label',''),'date':f['date'],'time':f['time'],'home':home,'opponent':f['away'] if home else f['home'],'score':f['score'] if home or f['score'] is None else list(reversed(f['score'])),'report':f['report']}
             team['matches'].append(item)
         team['matches'].sort(key=lambda m:(m['date'] or '9999',m['time']))
-        if team['placement']:print('Placement fixtures imported:',team['name'],team['group'],len(team['matches']),flush=True)
+        if team['placement']:
+            if not team['matches']:
+                saved=old.get(old_group_key(team))
+                if saved and saved.get('matches'):
+                    team['matches']=saved['matches']
+                    team['status']='cached'
+                    team['data_updated']=saved.get('data_updated') or previous.get('updated','')
+                else:team['status']='unavailable'
+            print('Placement fixtures imported:',team['name'],team['group'],len(team['matches']),flush=True)
     if not ok:raise ValueError('No teams with matched standings; keep previous file')
     teams=merge_rounds(teams)
     seasons=sorted({t['season'] for t in teams},key=season_sort,reverse=True)
