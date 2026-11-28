@@ -36,6 +36,8 @@ function updateClock(){
 function dateLabel(m){const d=m.date.split('-');return d[2]+'.'+d[1]+'.'+(full?d[0]:'')}
 function external(a,url){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}
 let reportDialog=null,reportTrigger=null,oldOverflow='';
+function reportOutcome(p){return Array.isArray(p)&&p.length===2?(p[0]>p[1]?'win':p[0]<p[1]?'loss':'draw'):'draw'}
+function setOutcome(value){const parts=String(value).split(':');if(parts.length!==2)return 'draw';const nums=parts.map(p=>p.trim().match(/^\[?(\d+)/)?.[1]);return nums.every(n=>n!==undefined)?reportOutcome(nums.map(Number)):'draw'}
 function makeDialog(){
  const dialog=el('dialog','mc-report');dialog.setAttribute('aria-labelledby','mc-report-title');
  const bar=el('div','mc-report-bar'),title=el('h2','','Spielbericht');title.id='mc-report-title';
@@ -62,16 +64,16 @@ function showReport(m,trigger){
    if(!Array.isArray(section.games)||!section.games.length)continue;
    const group=el('section','mc-report-section'),head=el('div','mc-report-section-head');
    head.append(el('h3','',section.kind==='Doppel'?'Doppelspiele':'Einzelspiele'));
-   const total=section.games.reduce((a,g)=>Array.isArray(g.point)?[a[0]+g.point[0],a[1]+g.point[1]]:a,[0,0]);head.append(el('strong','mc-report-subtotal',orient(total).join(':')));group.append(head);
+   const total=section.games.reduce((a,g)=>Array.isArray(g.point)?[a[0]+g.point[0],a[1]+g.point[1]]:a,[0,0]);head.append(el('strong','mc-report-subtotal '+reportOutcome(total),orient(total).join(':')));group.append(head);
    const labels=el('div','mc-game-labels');labels.append(el('span','',m.home?'NTC 93':'Heim'),el('span','','Satzstände'),el('span','',m.home?'Gast':'NTC 93'));group.append(labels);
    section.games.forEach((g,i)=>{
     const line=el('div','mc-game'),left=el('div','mc-game-side left '+(m.home?'ntc':'opponent')),right=el('div','mc-game-side right '+(m.home?'opponent':'ntc')),middle=el('div','mc-game-middle');
     const names=(node,value)=>String(value||'–').split(' / ').forEach(n=>node.append(el('span','',n)));
     names(left,m.home?g.ntc:g.opponent);names(right,m.home?g.opponent:g.ntc);
-    if(Array.isArray(g.point)){const p=orient(g.point);if(p[0]>p[1])left.classList.add('winner');else if(p[0]<p[1])right.classList.add('winner')}
+    if(Array.isArray(g.point)){const p=orient(g.point),outcome=reportOutcome(g.point);if(p[0]>p[1])left.classList.add('winner');else if(p[0]<p[1])right.classList.add('winner');(m.home?left:right).classList.add('ntc-'+outcome)}
     middle.append(el('small','',String(i+1)+'. '+section.kind));
     const setline=el('div','mc-game-sets');
-    for(const set of Array.isArray(g.sets)?g.sets:[]){setline.append(el('span','',m.home?set:String(set).split(':').reverse().join(':')))}
+    for(const set of Array.isArray(g.sets)?g.sets:[]){setline.append(el('span','mc-set '+setOutcome(set),m.home?set:String(set).split(':').reverse().join(':')))}
     if(!setline.children.length)setline.append(el('span','','–'));
     middle.append(setline);line.append(left,middle,right);group.append(line);
    });content.append(group);
