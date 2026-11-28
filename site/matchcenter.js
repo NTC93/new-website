@@ -35,8 +35,60 @@ function updateClock(){
 }
 function dateLabel(m){const d=m.date.split('-');return d[2]+'.'+d[1]+'.'+(full?d[0]:'')}
 function external(a,url){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}
+let reportDialog=null,reportTrigger=null,oldOverflow='';
+function makeDialog(){
+ const dialog=el('dialog','mc-report');dialog.setAttribute('aria-labelledby','mc-report-title');
+ const bar=el('div','mc-report-bar'),title=el('h2','','Spielbericht');title.id='mc-report-title';
+ const close=el('button','mc-report-close','×');close.type='button';close.setAttribute('aria-label','Spielbericht schließen');close.addEventListener('click',()=>dialog.close());
+ bar.append(title,close);const content=el('div','mc-report-content');dialog.append(bar,content);document.body.append(dialog);
+ dialog.addEventListener('click',e=>{if(e.target===dialog){const b=dialog.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)dialog.close()}});
+ dialog.addEventListener('close',()=>{document.body.style.overflow=oldOverflow;if(reportTrigger?.isConnected)reportTrigger.focus();else root.querySelector('.match-result-button')?.focus();reportTrigger=null});
+ return dialog
+}
+function showReport(m,trigger){
+ if(!reportDialog)reportDialog=makeDialog();
+ const content=reportDialog.querySelector('.mc-report-content');content.replaceChildren();
+ const meta=el('div','mc-report-meta',[m.date.split('-').reverse().join('.'),m.time?m.time+' Uhr':'',m.league,m.home?'Heimspiel':'Auswärtsspiel'].filter(Boolean).join(' · '));
+ const scoreboard=el('div','mc-report-scoreboard');
+ const our=el('div','mc-report-team ntc');our.append(el('small','','NTC 93'),el('strong','',m.team));
+ const other=el('div','mc-report-team opponent');other.append(el('small','','Gegner'),el('strong','',m.opponent));
+ const scored=Array.isArray(m.score),result= scored?m.score.join(':'):'–';
+ const score=el('div','mc-report-total'+(scored?(m.score[0]>m.score[1]?' win':m.score[0]<m.score[1]?' loss':' draw'):''),result);
+ scoreboard.append(our,score,other);content.append(meta,scoreboard);
+ if(!scored)content.append(el('p','mc-report-empty','Das Ergebnis wurde bei nuLiga noch nicht eingetragen.'));
+ else if(!m.details?.sections?.length)content.append(el('p','mc-report-empty','Die Einzelergebnisse sind noch nicht verfügbar oder konnten nicht übernommen werden.'));
+ else{
+  for(const section of m.details.sections){
+   if(!Array.isArray(section.games)||!section.games.length)continue;
+   const group=el('section','mc-report-section'),head=el('div','mc-report-section-head');
+   head.append(el('h3','',section.kind==='Doppel'?'Doppelspiele':'Einzelspiele'));
+   const total=section.games.reduce((a,g)=>Array.isArray(g.point)?[a[0]+g.point[0],a[1]+g.point[1]]:a,[0,0]);head.append(el('strong','mc-report-subtotal',total.join(':')));group.append(head);
+   const labels=el('div','mc-game-labels');labels.append(el('span','','NTC 93'),el('span','','Satzstände'),el('span','','Gegner'));group.append(labels);
+   section.games.forEach((g,i)=>{
+    const line=el('div','mc-game'),left=el('div','mc-game-side ntc'),right=el('div','mc-game-side opponent'),middle=el('div','mc-game-middle');
+    const names=(node,value)=>String(value||'–').split(' / ').forEach(n=>node.append(el('span','',n)));
+    names(left,g.ntc);names(right,g.opponent);
+    if(Array.isArray(g.point)){if(g.point[0]>g.point[1])left.classList.add('winner');else if(g.point[0]<g.point[1])right.classList.add('winner')}
+    middle.append(el('small','',String(i+1)+'. '+section.kind));
+    const setline=el('div','mc-game-sets');
+    for(const set of Array.isArray(g.sets)?g.sets:[]){setline.append(el('span','',set))}
+    if(!setline.children.length)setline.append(el('span','','–'));
+    middle.append(setline);line.append(left,middle,right);group.append(line);
+   });content.append(group);
+  }
+  content.append(el('p','mc-report-note','Alle Ergebnisse aus Sicht des NTC: NTC 93 steht immer links.'));
+ }
+ const foot=el('div','mc-report-foot');foot.append(el('span','','Quelle: nuLiga / TVBB'));
+ if(m.report){const a=el('a','','Original-Spielbericht ↗');external(a,m.report);foot.append(a)}
+ content.append(foot);
+ reportTrigger=trigger;oldOverflow=document.body.style.overflow;document.body.style.overflow='hidden';
+ reportDialog.showModal();reportDialog.querySelector('.mc-report-close').focus();
+}
 function row(m,status){
- const a=el('a','match-row'+(status==='running'?' match-running':status==='ended'?' match-ended':''));external(a,m.report||source);
+ const result=status==='scored'||status==='ended';
+ const a=el(result?'button':'a','match-row'+(status==='running'?' match-running':status==='ended'?' match-ended':'')+(result?' match-result-button':''));
+ if(result){a.type='button';a.setAttribute('aria-haspopup','dialog');a.setAttribute('aria-label','Spielbericht: '+m.team+' '+(m.home?'gegen ':'bei ')+m.opponent);a.addEventListener('click',()=>showReport(m,a))}
+ else external(a,m.report||source);
  const info=el('div','match-info'),meta=el('span','match-meta');
  const day=el('time','match-date',dateLabel(m));day.dateTime=m.date;
  meta.append(day,el('span','match-location',m.home?'Heim':'Auswärts'),el('span','match-league',m.league||''));
