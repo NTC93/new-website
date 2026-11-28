@@ -15,3 +15,45 @@
 .arrival-routes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:15px}.arrival-route{border-top:3px solid var(--green,#146143);padding:17px 0 10px}.arrival-route h3{margin:0 0 9px;font-size:18px}.arrival-route p{font-size:14px;color:var(--muted);margin:0 0 11px}.arrival-route a{font-size:13px;color:var(--green);font-weight:700;text-decoration:underline;text-underline-offset:4px}
 .foot-address-link{color:inherit;text-decoration:none}.foot-address-link:hover{text-decoration:underline}
 @media(max-width:720px){.arrival-grid{grid-template-columns:1fr;gap:18px}.arrival-map,.arrival-map iframe{min-height:320px}.arrival-info{grid-row:1;padding:0;gap:12px}.arrival-routes{grid-template-columns:1fr;gap:13px}.sponsor-head-actions{justify-content:flex-start}.arrival-map-card{padding:18px}}
+
+
+/* NTC accent palette: club petrol, tennis yellow, and a touch of clay.
+   Keep the editorial layout, content, status colors and reduced-motion behavior. */
+:root{--accent-clay:#bd744c;--accent-clay-ink:#8b492b;--accent-clay-light:#fcf3ec;--accent-mint:#f0f7f3;--accent-gold:#e5c747}
+body>header{border-bottom-color:#cfdfd8}
+header .brand strong{color:var(--deep)}
+header .booking{box-shadow:inset 0 -3px 0 #f6dd3b}
+header .nav-dropdown a:hover,header .nav-dropdown a:focus-visible{background:var(--accent-mint)}
+.hero .hero-link{box-shadow:0 2px 0 #18362e36}
+.hero .hero-link:hover,.hero .hero-link:focus-visible{background:#ffed9a}
+.hero-controls .count{color:#fff3b1}
+.quick{background:#fbfdfb;border-bottom-color:#d6e3da}
+.quick-inner a span{display:inline-grid;place-items:center;flex-shrink:0;width:26px;height:26px;background:#e4f1eb;border-radius:50%;font-size:16px;line-height:1;color:#075b50}
+.quick-inner a:nth-child(2) span{background:#fbf2cc;color:#765a12}
+.quick-inner a:nth-child(3) span{background:var(--accent-clay-light);color:var(--accent-clay-ink)}
+.quick-inner a:hover span,.quick-inner a:focus-visible span{background:#d7e9de;color:var(--deep)}
+/* Small section markers, not large colored cards. */
+.section-label,.sponsor-head .eyebrow{display:flex;align-items:center;gap:8px}
+.section-label:before,.sponsor-head .eyebrow:before{content:'';width:18px;height:3px;background:var(--accent-gold);border-radius:1px;flex-shrink:0}
+.news .section-label:before{background:var(--accent-clay)}
+.intro h2 em{color:var(--green)}
+.newsrow time,.archive-item time{color:var(--accent-clay-ink);font-weight:650}
+.newsrow:hover,.archive-item:hover{border-bottom-color:#a9c5b7}
+.matchcenter:not(.match-full){box-shadow:inset 0 3px 0 #bad6ca;background:#f2f7f3}
+.match-title svg{color:var(--green)}
+.match-column:first-child h3{border-bottom-color:#b8d3c7}
+.match-column:nth-child(2) h3{border-bottom-color:#d5c7a2}
+.club-events-heading{border-bottom-color:#d9e3da}
+.club-event-date{background:var(--accent-clay-light);color:var(--accent-clay-ink);box-shadow:inset 0 3px 0 #d9a080}
+.sponsor-band{border-top:1px solid #e3ebe5}
+.sponsor-head h2{color:var(--deep)}
+.sponsor-logo{border-color:#dbe8df}
+.sponsor-controls button:hover{background:#f8f2d9;border-color:#e0d39d}
+.detail-mast{background:#edf5f0}
+.detail-kicker:before,.news-kicker:before{background:var(--accent-gold)}
+.detail-page .section-nav,.detail-page .breadcrumbs a{color:var(--deep)}
+.detail-metrics strong{color:var(--green)}
+.tp-detail-header .tp-kicker{color:var(--accent-clay-ink)}
+.tp-section h2{color:var(--deep)}
+footer{border-top:3px solid #b1cdbd}
+footer .footlinks a:hover,footer .footlinks a:focus-visible{color:#ffe87a}
