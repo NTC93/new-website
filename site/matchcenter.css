@@ -17,3 +17,15 @@
 .match-foot{font-size:12px;font-weight:550;color:#405b53}
 .match-full .match-row{min-height:72px}
 @media(max-width:720px){.match-row{min-height:64px;padding:10px 0}.match-meta{font-size:12px}.match-meta .match-date{font-size:13px}.match-team{font-size:14px}.match-opponent{font-size:13px}.match-time strong{font-size:16px}.match-foot{font-size:11px}}
+
+/* Time-based match status, clearly distinct from actual submitted scores. */
+.match-status{flex:0 0 auto;min-width:76px;text-align:right;line-height:1.35;padding:5px 7px;border-radius:4px}
+.match-status strong{display:block;font-size:13px;font-weight:800;white-space:nowrap}
+.match-status small{display:block;font-size:11px;font-weight:600;white-space:nowrap}
+.match-status.live{background:#dcece1;color:#17603e}
+.match-live-label{display:flex!important;align-items:center;justify-content:flex-end;gap:6px}
+.match-live-dot{display:inline-block;width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#24844d;box-shadow:0 0 0 3px #24844d20}
+.match-status.awaiting{background:#e2e7e2;color:#43594e}
+.match-running{border-left:3px solid #24844d;padding-left:9px}
+.match-running:hover{background:#e2ebe2}
+@media(max-width:720px){.match-status strong{font-size:12px}.match-status small{font-size:10px}.match-running{padding-left:6px}}
