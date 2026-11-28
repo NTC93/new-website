@@ -46,16 +46,6 @@ jobs:
           PY
       - name: Install public data import dependencies
         run: python3 -m pip install --disable-pip-version-check beautifulsoup4 requests
-      - name: Refresh public nuLiga matches
-        shell: bash
-        run: |
-          set -euo pipefail
-          trap 'rm -f site/matches-previous.json' EXIT
-          curl --fail --silent --show-error --connect-timeout 8 --max-time 25 "https://neu.ntc93.de/matches.json?previous=$GITHUB_RUN_ID" -o site/matches-previous.json || rm -f site/matches-previous.json
-          if ! python3 tools/matchcenter.py; then
-            echo "::warning::nuLiga refresh failed. Existing remote match data remains unchanged."
-            [[ "$GITHUB_EVENT_NAME" != schedule ]] || exit 1
-          fi
       - name: Refresh public nuLiga teams and group standings
         shell: bash
         run: |
@@ -65,6 +55,16 @@ jobs:
           curl --fail --silent --show-error --connect-timeout 8 --max-time 25 "https://neu.ntc93.de/teams.json?previous=$GITHUB_RUN_ID" -o site/teams-previous.json || rm -f site/teams-previous.json
           if ! python3 tools/teams.py; then
             echo "::warning::nuLiga team import failed. Existing remote team data remains unchanged."
+          fi
+      - name: Refresh public nuLiga matches
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f site/matches-previous.json' EXIT
+          curl --fail --silent --show-error --connect-timeout 8 --max-time 25 "https://neu.ntc93.de/matches.json?previous=$GITHUB_RUN_ID" -o site/matches-previous.json || rm -f site/matches-previous.json
+          if ! python3 tools/matchcenter.py; then
+            echo "::warning::nuLiga refresh failed. Existing remote match data remains unchanged."
+            [[ "$GITHUB_EVENT_NAME" != schedule ]] || exit 1
           fi
       - name: Validate PHP and JavaScript syntax
         if: github.event_name != 'schedule'
