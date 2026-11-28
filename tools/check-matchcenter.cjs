@@ -25,7 +25,7 @@ async function main(){
   now=Date.parse(date+'T16:00:00+01:00');
   const clock=timers.find(t=>t.ms===15000);assert(clock);clock.cb();
   assert(live.hidden,'Live section must disappear at six-hour boundary');
-  assert.equal(w.document.querySelectorAll('[data-results] .match-ended').length,2,'Ended matches must enter latest-three result list');
+  assert.equal(w.document.querySelectorAll('[data-results] .match-ended').length,3,'Ended matches must enter latest-three result list');
   assert(w.document.querySelector('[data-results]').textContent.includes('Ergebnis offen'));
   assert(w.document.querySelector('[data-fixtures]').textContent.includes('Später'));
   console.log('Matchcenter status DOM verified: running, 6-hour transition, open scores, later fixtures');
