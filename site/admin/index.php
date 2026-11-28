@@ -115,9 +115,10 @@ if(isset($_GET['calendar'])){
   if(!empty($d['status'])&&$d['status']!=='Bestätigt')$description.="\nStatus: ".$d['status'];
   $lines[]='DESCRIPTION:'.ics_escape($description);
   $lines[]='STATUS:'.(stripos((string)($d['status']??''),'voraussichtlich')!==false?'TENTATIVE':'CONFIRMED');
-  $link=(string)($d['link']??'');
-  if(str_starts_with($link,'/')&&!str_starts_with($link,'//'))$link='https://ntc93.de'.$link;
-  if(filter_var($link,FILTER_VALIDATE_URL)&&in_array(parse_url($link,PHP_URL_SCHEME),['http','https'],true)&&!preg_match('/[\r\n]/',$link))$lines[]='URL:'.$link;
+  // Calendar subscriptions link to our detail page, never directly to an external site.
+  $host=strtolower((string)($_SERVER['HTTP_HOST']??''));
+  $origin=$host==='neu.ntc93.de'?'https://neu.ntc93.de':'https://ntc93.de';
+  $lines[]='URL:'.$origin.'/termine/detail/?slug='.rawurlencode((string)$row['slug']);
   $lines[]='END:VEVENT';
  }
  $lines[]='END:VCALENDAR';
