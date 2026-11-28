@@ -571,6 +571,10 @@ if footlinks:
     for a in list(footlinks.select('a[href^="mailto:"]')):a.decompose()
     if not footlinks.find('a',href='/anfahrt/#kontaktformular'):
         a=source.new_tag('a',href='/anfahrt/#kontaktformular');a.string='Kontaktformular';footlinks.insert(1,a)
+if footlinks and not footlinks.find('a',href='/admin/'):
+    admin_link=source.new_tag('a',href='/admin/',attrs={'class':'foot-admin-link'})
+    admin_link.string='Adminbereich'
+    footlinks.append(admin_link)
 foot_address=source.select_one('.foot p')
 if foot_address:
     for text_node in list(foot_address.find_all(string=True)):
