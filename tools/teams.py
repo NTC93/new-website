@@ -263,6 +263,10 @@ def main():
             print('Placement fixtures imported:',team['name'],team['group'],len(team['matches']),flush=True)
     if not ok:raise ValueError('No teams with matched standings; keep previous file')
     teams=merge_rounds(teams)
+    # Audit the exact serialized placement data, not just the group import count.
+    for team in teams:
+        for extra in team.get('rounds',[]):
+            print('Published placement:',team['id'],team['season'],team['name'],extra['group'],json.dumps([{'date':m['date'],'opponent':m['opponent'],'score':m['score']} for m in extra['matches']],ensure_ascii=False),flush=True)
     seasons=sorted({t['season'] for t in teams},key=season_sort,reverse=True)
     teams.sort(key=lambda t:(t['category'],t['name'],t['id']))
     data={'updated':datetime.now(TZ).isoformat(timespec='seconds'),'source':CLUB,'seasons':seasons,'teams':teams}
