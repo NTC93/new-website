@@ -113,6 +113,7 @@ jobs:
           if [[ -f site/teams.json ]]; then
             npm install --prefix "$RUNNER_TEMP/ntc-team-test" --no-audit --no-fund jsdom@26.1.0
             NODE_PATH="$RUNNER_TEMP/ntc-team-test/node_modules" node tools/check-team-placement.cjs
+            NODE_PATH="$RUNNER_TEMP/ntc-team-test/node_modules" node tools/check-matchcenter.cjs
           else
             echo "::warning::No fresh team data available for placement display test."
           fi
