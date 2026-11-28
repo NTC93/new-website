@@ -105,6 +105,17 @@ jobs:
       - name: Build public subpages
         if: github.event_name != 'schedule'
         run: python3 tools/import_pages.py
+      - name: Verify actual placement results on team detail pages
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f site/teams.json ]]; then
+            npm install --prefix "$RUNNER_TEMP/ntc-team-test" --no-audit --no-fund jsdom@26.1.0
+            NODE_PATH="$RUNNER_TEMP/ntc-team-test/node_modules" node tools/check-team-placement.cjs
+          else
+            echo "::warning::No fresh team data available for placement display test."
+          fi
       - name: Save downloaded media independently of deployment
         if: github.event_name != 'schedule'
         uses: actions/cache/save@v4
@@ -274,6 +285,10 @@ jobs:
           fi
           curl --fail --silent --show-error --max-time 60 'https://neu.ntc93.de/anfahrt/' -o "$RUNNER_TEMP/arrival.html"
           cmp -s site/anfahrt/index.html "$RUNNER_TEMP/arrival.html"
+          curl -fsSL --max-time 30 "https://neu.ntc93.de/teams.js?run=$GITHUB_RUN_ID" -o "$RUNNER_TEMP/teams-js-verified"
+          cmp -s site/teams.js "$RUNNER_TEMP/teams-js-verified"
+          curl -fsSL --max-time 30 "https://neu.ntc93.de/mannschaften/team/?run=$GITHUB_RUN_ID" -o "$RUNNER_TEMP/team-detail-verified"
+          cmp -s site/mannschaften/team/index.html "$RUNNER_TEMP/team-detail-verified"
           status=$(curl --silent --show-error --max-time 30 --output "$RUNNER_TEMP/index.txt" --write-out '%{http_code}' 'https://neu.ntc93.de/index.html')
           [[ "$status" == 200 ]] && cmp -s site/index.html "$RUNNER_TEMP/index.txt" || { echo "Homepage verification failed"; exit 1; }
           # Deliver the private import only after all referenced public files are present.
