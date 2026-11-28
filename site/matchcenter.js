@@ -50,11 +50,11 @@ function showReport(m,trigger){
  const content=reportDialog.querySelector('.mc-report-content');content.replaceChildren();
  const meta=el('div','mc-report-meta',[m.date.split('-').reverse().join('.'),m.time?m.time+' Uhr':'',m.league,m.home?'Heimspiel':'Auswärtsspiel'].filter(Boolean).join(' · '));
  const scoreboard=el('div','mc-report-scoreboard');
- const our=el('div','mc-report-team ntc');our.append(el('small','','NTC 93'),el('strong','',m.team));
- const other=el('div','mc-report-team opponent');other.append(el('small','','Gegner'),el('strong','',m.opponent));
- const scored=Array.isArray(m.score),result= scored?m.score.join(':'):'–';
+ const our=el('div','mc-report-team ntc');our.append(el('small','',m.home?'Heim · NTC 93':'Auswärts · NTC 93'),el('strong','',m.team));
+ const other=el('div','mc-report-team opponent');other.append(el('small','',m.home?'Auswärts':'Heim'),el('strong','',m.opponent));
+ const scored=Array.isArray(m.score),orient=values=>m.home?values:[...values].reverse(),result=scored?orient(m.score).join(':'):'–';
  const score=el('div','mc-report-total'+(scored?(m.score[0]>m.score[1]?' win':m.score[0]<m.score[1]?' loss':' draw'):''),result);
- scoreboard.append(our,score,other);content.append(meta,scoreboard);
+ scoreboard.append(m.home?our:other,score,m.home?other:our);content.append(meta,scoreboard);
  if(!scored)content.append(el('p','mc-report-empty','Das Ergebnis wurde bei nuLiga noch nicht eingetragen.'));
  else if(!m.details?.sections?.length)content.append(el('p','mc-report-empty','Die Einzelergebnisse sind noch nicht verfügbar oder konnten nicht übernommen werden.'));
  else{
@@ -62,21 +62,21 @@ function showReport(m,trigger){
    if(!Array.isArray(section.games)||!section.games.length)continue;
    const group=el('section','mc-report-section'),head=el('div','mc-report-section-head');
    head.append(el('h3','',section.kind==='Doppel'?'Doppelspiele':'Einzelspiele'));
-   const total=section.games.reduce((a,g)=>Array.isArray(g.point)?[a[0]+g.point[0],a[1]+g.point[1]]:a,[0,0]);head.append(el('strong','mc-report-subtotal',total.join(':')));group.append(head);
-   const labels=el('div','mc-game-labels');labels.append(el('span','','NTC 93'),el('span','','Satzstände'),el('span','','Gegner'));group.append(labels);
+   const total=section.games.reduce((a,g)=>Array.isArray(g.point)?[a[0]+g.point[0],a[1]+g.point[1]]:a,[0,0]);head.append(el('strong','mc-report-subtotal',orient(total).join(':')));group.append(head);
+   const labels=el('div','mc-game-labels');labels.append(el('span','',m.home?'NTC 93':'Heim'),el('span','','Satzstände'),el('span','',m.home?'Gast':'NTC 93'));group.append(labels);
    section.games.forEach((g,i)=>{
-    const line=el('div','mc-game'),left=el('div','mc-game-side ntc'),right=el('div','mc-game-side opponent'),middle=el('div','mc-game-middle');
+    const line=el('div','mc-game'),left=el('div','mc-game-side left '+(m.home?'ntc':'opponent')),right=el('div','mc-game-side right '+(m.home?'opponent':'ntc')),middle=el('div','mc-game-middle');
     const names=(node,value)=>String(value||'–').split(' / ').forEach(n=>node.append(el('span','',n)));
-    names(left,g.ntc);names(right,g.opponent);
-    if(Array.isArray(g.point)){if(g.point[0]>g.point[1])left.classList.add('winner');else if(g.point[0]<g.point[1])right.classList.add('winner')}
+    names(left,m.home?g.ntc:g.opponent);names(right,m.home?g.opponent:g.ntc);
+    if(Array.isArray(g.point)){const p=orient(g.point);if(p[0]>p[1])left.classList.add('winner');else if(p[0]<p[1])right.classList.add('winner')}
     middle.append(el('small','',String(i+1)+'. '+section.kind));
     const setline=el('div','mc-game-sets');
-    for(const set of Array.isArray(g.sets)?g.sets:[]){setline.append(el('span','',set))}
+    for(const set of Array.isArray(g.sets)?g.sets:[]){setline.append(el('span','',m.home?set:String(set).split(':').reverse().join(':')))}
     if(!setline.children.length)setline.append(el('span','','–'));
     middle.append(setline);line.append(left,middle,right);group.append(line);
    });content.append(group);
   }
-  content.append(el('p','mc-report-note','Alle Ergebnisse aus Sicht des NTC: NTC 93 steht immer links.'));
+  content.append(el('p','mc-report-note','Spielbericht in Heim-Gast-Reihenfolge: Heim links, Gast rechts.'));
  }
  const foot=el('div','mc-report-foot');foot.append(el('span','','Quelle: nuLiga / TVBB'));
  if(m.report){const a=el('a','','Original-Spielbericht ↗');external(a,m.report);foot.append(a)}
