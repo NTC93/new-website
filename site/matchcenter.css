@@ -76,3 +76,9 @@
 .mc-report-subtotal{padding:3px 8px;border-radius:4px;font-variant-numeric:tabular-nums}
 .mc-game-side.ntc-win{color:#17603e;font-weight:800}
 .mc-game-side.ntc-loss{color:#a03939}
+
+.match-live-list[hidden]{display:none}
+.match-live-list{margin:8px 0 14px;padding:8px 12px;background:#e8f3eb;border:1px solid #c3ddca;border-radius:4px}
+.match-live-heading{font-size:13px;font-weight:800;color:#17603e;margin:0 0 4px;line-height:1.4}
+.match-live-list .match-row:last-child{border-bottom:0}
+.match-next-heading{font-size:12px;font-weight:750;color:#526963;margin:12px 0 3px;text-transform:uppercase;letter-spacing:.04em}
