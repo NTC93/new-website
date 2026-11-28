@@ -57,3 +57,24 @@ header .nav-dropdown a:hover,header .nav-dropdown a:focus-visible{background:var
 .tp-section h2{color:var(--deep)}
 footer{border-top:3px solid #b1cdbd}
 footer .footlinks a:hover,footer .footlinks a:focus-visible{color:#ffe87a}
+
+/* Contact form: compact, accessible and consistent with NTC design. */
+.ntc-contact{max-width:950px;margin:36px 0 15px;padding:clamp(20px,4vw,36px);background:#f4f8f5;border:1px solid #d6e4da;border-top:3px solid var(--green);border-radius:5px;scroll-margin-top:24px}
+.ntc-contact h2{margin:0 0 10px;font-size:clamp(25px,3vw,34px);line-height:1.2;color:var(--deep)}
+.ntc-contact>p{max-width:700px;color:var(--muted);margin:0 0 22px}
+.contact-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 20px}
+.contact-fields label{display:grid;gap:6px;min-width:0;font-size:13px;font-weight:650;color:var(--ink)}
+.contact-wide{grid-column:1/-1}
+.contact-fields input,.contact-fields select,.contact-fields textarea{min-width:0;width:100%;font:inherit;font-weight:400;font-size:16px;line-height:1.4;padding:11px 12px;border:1px solid #afc5b9;background:#fff;color:var(--ink);border-radius:4px}
+.contact-fields textarea{resize:vertical;min-height:130px}
+.contact-trap{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
+.contact-consent{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.55;margin:20px 0}
+.contact-consent input{flex-shrink:0;width:18px;height:18px;accent-color:var(--green);margin-top:2px}
+.contact-consent a{color:var(--green);font-weight:650;text-decoration:underline;text-underline-offset:2px}
+.contact-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.contact-required{font-size:12px;color:var(--muted)}
+.contact-actions button:disabled{opacity:.55;cursor:not-allowed}
+.contact-status{color:var(--deep);font-size:14px;font-weight:650;margin:12px 0 0}
+.contact-status.error{color:#a03939}
+.contact-status:empty{display:none}
+@media(max-width:620px){.contact-fields{grid-template-columns:1fr;gap:12px}.ntc-contact{padding:18px;margin-top:25px}}
