@@ -63,25 +63,39 @@ def parse_report(soup,home):
         for tr in table.find_all('tr'):
             raw=tr.find_all('td',recursive=False)
             cs=expanded(raw)
-            if not raw or len(cs)!=len(header):continue
-            if len(set(map(id,cs[:start])))<2:continue
+            if not raw:continue
+            # Header colspans sometimes differ from body columns. In that case
+            # identify the trailing result columns from the standard layout.
+            row_start,row_point,row_sets=start,point,setcols
+            if len(cs)!=len(header):
+                trailing=len(header)-start
+                row_start=len(cs)-trailing
+                if row_start<2 or (row_start%2):continue
+                row_point=row_start+point-start
+                row_sets=[row_start+i-start for i in setcols]
+            if row_point>=len(cs) or any(i>=len(cs) for i in row_sets):continue
+            if len(set(map(id,cs[:row_start])))<2:continue
             if re.match(r'^(einzel|doppel|gesamt)(?:\s|$)',norm(raw[0]),re.I):continue
             # The two team names in the header cover rank/position cells and names.
             # Player names are the last substantive text cell in each side.
             teamcols=header[:start]
-            split=next((i for i in range(1,len(teamcols)) if teamcols[i] and teamcols[i]!=teamcols[0]),None)
-            if split is None or split<1 or split>=start:split=start//2
+            split=start//2
+            # Typical nuLiga headers use two equally wide groups; only use
+            # an explicit header boundary if it is near the middle.
+            meaningful=[i for i in range(start) if teamcols[i] and (i==0 or teamcols[i]!=teamcols[i-1])]
+            if len(meaningful)==2 and abs(meaningful[1]-split)<=1:split=meaningful[1]
             def side(cols):
                 for c in reversed(cols):
                     value=players(c)
                     if value and not re.fullmatch(r'(?:w\.?o\.?|sw[ghb]?)',value,re.I):return value
                 return ''
-            h=side(cs[:split]);a=side(cs[split:start])
+            if row_start!=start:split=row_start//2
+            h=side(cs[:split]);a=side(cs[split:row_start])
             if not h and not a:continue
-            points=pair(norm(cs[point]))
+            points=pair(norm(cs[row_point]))
             if points not in ([1,0],[0,1],[0,0]):continue
             sets=[]
-            for idx in setcols:
+            for idx in row_sets:
                 val=norm(cs[idx])
                 if not val or val in ('-','–'):continue
                 # Preserve published score including tiebreak notation. Never copy free text.
