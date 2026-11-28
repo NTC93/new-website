@@ -58,6 +58,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Retain known-good public group data if an individual nuLiga request fails.
+          trap 'rm -f site/teams-previous.json' EXIT
+          curl --fail --silent --show-error --connect-timeout 8 --max-time 25 "https://neu.ntc93.de/teams.json?previous=$GITHUB_RUN_ID" -o site/teams-previous.json || rm -f site/teams-previous.json
           if ! python3 tools/teams.py; then
             echo "::warning::nuLiga team import failed. Existing remote team data remains unchanged."
           fi
