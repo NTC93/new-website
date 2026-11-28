@@ -1026,6 +1026,17 @@ if privacy_path.is_file():
             notice=BeautifulSoup('<section id="datenschutz-kontaktformular"><h2>Kontaktformular</h2><p>Wenn du uns über das Kontaktformular kontaktierst, verarbeiten wir deinen Namen, deine E-Mail-Adresse, gegebenenfalls deine Telefonnummer, den Betreff, den gewählten Zuständigkeitsbereich und deine Nachricht zur Bearbeitung und Beantwortung deiner Anfrage. Deine Angaben werden per E-Mail an die zentrale Geschäftsstelle und, sofern erforderlich, an die für dein Anliegen zuständige Person im Verein übermittelt. Eine zusätzliche Speicherung der Nachricht im Redaktionssystem erfolgt nicht.</p><p>Die Verarbeitung erfolgt zur Durchführung vorvertraglicher oder vertraglicher Maßnahmen (Art. 6 Abs. 1 lit. b DSGVO), soweit einschlägig, ansonsten aufgrund unseres berechtigten Interesses an der Bearbeitung von Anfragen (Art. 6 Abs. 1 lit. f DSGVO). Die Angaben werden gelöscht, sobald sie für die Bearbeitung nicht mehr erforderlich sind, soweit keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p><p>Zum Schutz vor Missbrauch nutzt das Formular ein technisch erforderliches Sitzungscookie sowie einen mit einem geheimen Schlüssel erzeugten Prüfwert der IP-Adresse zur kurzfristigen Begrenzung der Anfragen. Diese Prüfwerte werden nach Ablauf der Schutzfrist bei der nächsten Anfrage bereinigt. Es werden keine externen CAPTCHA-Dienste eingebunden.</p></section>','html.parser')
             target.append(notice)
             privacy_path.write_text(str(privacy),encoding='utf-8')
+# Version Matchcenter assets on both the homepage and full page.
+for path in (ROOT/'index.html',ROOT/'matchcenter/index.html'):
+    if not path.is_file():continue
+    page=BeautifulSoup(path.read_text(encoding='utf-8'),'html.parser')
+    for tag in page.select('script[src],link[href]'):
+        key='src' if tag.name=='script' else 'href'
+        value=tag.get(key,'')
+        for name in ('matchcenter.js','matchcenter.css'):
+            if value.split('?')[0] in ('/'+name,name):
+                tag[key]=team_asset(name)
+    path.write_text(str(page),encoding='utf-8')
 migration=localize(ROOT)
 
 # Static links receive the policy too, so it works even with JavaScript disabled.
