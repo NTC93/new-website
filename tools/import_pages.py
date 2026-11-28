@@ -962,9 +962,13 @@ out.write_text('<!doctype html><html lang="de">'+str(h)+'<body>'+header+'<main c
 
 
 # Replace photo-based legacy team pages with the nuLiga data portal.
+# Bust browser caches when the team portal assets change.
+def team_asset(name):
+    import hashlib
+    return '/'+name+'?v='+hashlib.sha256((ROOT/name).read_bytes()).hexdigest()[:12]
 teamhead=copy.deepcopy(head)
-teamhead.append(source.new_tag('link',attrs={'rel':'stylesheet','href':'/teams.css'}))
-teamhead.append(source.new_tag('script',attrs={'src':'/teams.js','defer':''}))
+teamhead.append(source.new_tag('link',attrs={'rel':'stylesheet','href':team_asset('teams.css')}))
+teamhead.append(source.new_tag('script',attrs={'src':team_asset('teams.js'),'defer':''}))
 team_routes={'/mannschaften/':('Mannschaften',''),'/damen/':('Damen','Damen'),'/herren/':('Herren','Herren'),'/seniorinnen/':('Seniorinnen','Seniorinnen'),'/senioren/':('Senioren','Senioren'),'/jugendteams/':('Jugendteams','Jugend'),'/mixed-doppel/':('Mixed & Doppel','Mixed & Doppel'),'/mannschaften/team/':('Mannschaft','')}
 for route_path,(title,category) in team_routes.items():
     detail=route_path=='/mannschaften/team/'
@@ -979,8 +983,8 @@ for route_path,(title,category) in team_routes.items():
 mc=ROOT/'matchcenter/index.html'
 if mc.is_file():
     page=BeautifulSoup(mc.read_text(encoding='utf-8'),'html.parser')
-    page.head.append(page.new_tag('link',attrs={'rel':'stylesheet','href':'/teams.css'}))
-    page.head.append(page.new_tag('script',attrs={'src':'/teams.js','defer':''}))
+    page.head.append(page.new_tag('link',attrs={'rel':'stylesheet','href':team_asset('teams.css')}))
+    page.head.append(page.new_tag('script',attrs={'src':team_asset('teams.js'),'defer':''}))
     page.main.append(BeautifulSoup('<section class="tp-matchcenter" id="tabellen"><div class="detail-kicker">Mannschaftsspielbetrieb</div><h2>Tabellen</h2><p>Wähle die Saison und eine Mannschaft aus, um die vollständige Gruppentabelle aufzurufen.</p><div class="team-portal" data-team-portal="standings"><p class="tp-empty">Tabellen werden geladen …</p></div></section>','html.parser'))
     mc.write_text(str(page),encoding='utf-8')
 
