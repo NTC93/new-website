@@ -8,6 +8,7 @@ const berlinClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Berlin',year
 const SIX_HOURS=6*60*60*1000;
 const starts=new Map();
 function berlinStart(m){
+ if(typeof m.start_at==='string'&&/[+-]\d{2}:\d{2}$/.test(m.start_at)){const instant=Date.parse(m.start_at);if(Number.isFinite(instant))return instant}
  if(!/^\d{4}-\d{2}-\d{2}$/.test(m.date||'')||!/^\d{1,2}:\d{2}$/.test(m.time||''))return null;
  const key=m.date+'T'+m.time;if(starts.has(key))return starts.get(key);
  const [y,mo,d]=m.date.split('-').map(Number),[h,mi]=m.time.split(':').map(Number);
@@ -22,7 +23,7 @@ function berlinStart(m){
  starts.set(key,instant);return instant;
 }
 function state(m,now,day){
- if(Array.isArray(m.score))return 'scored';
+ if(Array.isArray(m.score)&&m.score.some(n=>n>0))return 'scored';
  const start=berlinStart(m);
  if(start===null)return m.date<day?'ended':'upcoming';
  if(now<start)return 'upcoming';
@@ -112,13 +113,20 @@ function display(){
  const rows=matches.map(m=>({match:m,status:state(m,now,today)}));
  const order=(a,b)=>(a.match.date+(a.match.time||'')).localeCompare(b.match.date+(b.match.time||''));
  const results=rows.filter(x=>x.status==='scored'||x.status==='ended').sort((a,b)=>order(b,a));
- const upcoming=rows.filter(x=>x.status==='running'||x.status==='upcoming').sort((a,b)=>(a.status==='running'?0:1)-(b.status==='running'?0:1)||order(a,b));
+ const running=rows.filter(x=>x.status==='running').sort(order);
+ const upcoming=rows.filter(x=>x.status==='upcoming').sort(order);
+ const fixturesBox=q('[data-fixtures]');
+ let live=q('[data-live-fixtures]');
+ if(fixturesBox&&!live){live=el('div','match-live-list');live.dataset.liveFixtures='';fixturesBox.before(live)}
+ if(live){live.replaceChildren();live.hidden=!running.length;if(running.length){const heading=el('h4','match-live-heading','● Laufende Punktspiele · '+running.length);live.append(heading);for(const x of running)live.append(row(x.match,x.status))}}
+ const fixturesHeading=fixturesBox?.parentElement?.querySelector('h3');if(fixturesHeading)fixturesHeading.textContent='Punktspiele';
  for(const [target,rows,isResult] of [['[data-results]',results,true],['[data-fixtures]',upcoming,false]]){
   const box=q(target);if(!box)continue;
   const visible=full?rows:rows.slice(0,3);
   const fragment=document.createDocumentFragment();
   for(const x of visible)fragment.append(row(x.match,x.status));
-  if(!visible.length)fragment.append(el('p','match-empty',isResult?'Keine Ergebnisse vorhanden.':'Keine kommenden Begegnungen im aktuellen Zeitraum.'));
+  if(!isResult&&running.length&&visible.length)fragment.append(el('h4','match-next-heading','Weitere Ansetzungen'));
+  if(!visible.length)fragment.append(el('p','match-empty',isResult?'Keine Ergebnisse vorhanden.':'Keine weiteren kommenden Begegnungen im aktuellen Zeitraum.'));
   box.replaceChildren(fragment);
  }
 }
