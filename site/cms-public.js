@@ -7,6 +7,7 @@
  const img=(src,cls,alt='')=>{if(!safe(src))return null;const el=make('img',cls);el.src=safe(src);el.alt=alt;el.loading='lazy';el.decoding='async';return el};
  const date=(v)=>{if(!v)return '';const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'.'+m[2]+'.'+m[1]:String(v)};
  async function items(kind){try{const r=await fetch('/admin/?public='+encodeURIComponent(kind),{credentials:'omit',cache:'no-cache'});if(!r.ok)return [];const data=await r.json();return Array.isArray(data.items)?data.items:[]}catch{return []}}
+ function eventLink(item){return '/termine/detail/?slug='+encodeURIComponent(item.slug)}
  function articleLink(item){return '/redaktion/?slug='+encodeURIComponent(item.slug)}
  function paragraphs(parent,body){for(const p of String(body||'').split(/\n\s*\n/).filter(Boolean)){const el=make('p','',p);el.style.whiteSpace='pre-line';parent.append(el)}}
  async function news(){const list=await items('news');if(!list.length)return;
@@ -37,18 +38,56 @@
     const day=item.data.date.slice(8);
     const range=end>item.data.date?(end.slice(0,7)===item.data.date.slice(0,7)?day+'–'+end.slice(8):day+'.'+item.data.date.slice(5,7)+'.–'+end.slice(8)+'.'+end.slice(5,7)+'.'):day;
     const dt=make('div','club-event-date');dt.append(make('strong','',range),make('span','',new Intl.DateTimeFormat('de-DE',{month:'short',year:'numeric',timeZone:'Europe/Berlin'}).format(d)));
-    const copy=make('div','club-event-copy');copy.append(make('h3','',item.title));
+    const copy=make('div','club-event-copy'),heading=make('h3'),title=make('a','club-event-title',item.title);title.href=eventLink(item);heading.append(title);copy.append(heading);
     if(item.data.status&&item.data.status.toLowerCase()!=='bestätigt')copy.append(make('span','club-event-status',item.data.status));
     const time=item.data.time?(item.data.time+(item.data.end_time?'–'+item.data.end_time:'')+(item.data.time.includes('Uhr')?'':' Uhr')):'';
     const meta=[time,item.data.venue].filter(Boolean).join(' · ');
     if(meta)copy.append(make('p','club-event-meta',meta));
     if(!compact)paragraphs(copy,item.data.body);
-    const link=safe(item.data.link);if(link){const linkEl=make('a','','Details →');linkEl.href=link;copy.append(linkEl)}
+    const linkEl=make('a','club-event-more','Details →');linkEl.href=eventLink(item);copy.append(linkEl);
     row.append(dt,copy);target.append(row)
    }
   }catch{}
   if(!target.children.length)target.append(make('p','club-event-empty','Zurzeit sind keine weiteren Vereinstermine eingetragen.'));
  }
 
+ async function eventDetail(){
+  const root=$('#club-event-detail');if(!root)return;
+  const slug=new URLSearchParams(location.search).get('slug');
+  if(!slug||!/^[a-z0-9][a-z0-9-]{0,179}$/.test(slug)){root.replaceChildren(make('h1','','Termin nicht gefunden'));return}
+  let list=[],fallback=false;
+  try{
+   const r=await fetch('/admin/?public=events',{credentials:'omit',cache:'no-store'});
+   if(!r.ok)throw Error('CMS unavailable');
+   const j=await r.json();if(!Array.isArray(j.items))throw Error('Invalid event list');list=j.items;
+  }catch{
+   try{const r=await fetch('/event-fallback.json',{cache:'no-cache'});if(!r.ok)throw Error();const j=await r.json();list=Array.isArray(j.items)?j.items:[];fallback=true}catch{}
+  }
+  const item=list.find(x=>x.slug===slug);root.replaceChildren();
+  const back=make('a','textlink','← Alle Termine');back.href='/termine/';root.append(back);
+  if(!item||!item.data){root.append(make('h1','pagetitle','Termin nicht verfügbar'),make('p','','Dieser Termin ist derzeit nicht veröffentlicht oder konnte nicht geladen werden.'));return}
+  const d=item.data;document.title=item.title+' | NTC 93';
+  const heading=make('div','club-event-detail-heading');heading.append(make('div','detail-kicker','Vereinstermine'),make('h1','',item.title));
+  if(d.status)heading.append(make('span','club-event-status',d.status));
+  root.append(heading);
+  const meta=make('dl','club-event-detail-meta');
+  const field=(label,value)=>{if(!value)return;const box=make('div');box.append(make('dt','',label),make('dd','',value));meta.append(box)};
+  field('Datum',date(d.date)+(d.end_date&&d.end_date!==d.date?' – '+date(d.end_date):''));
+  field('Uhrzeit',d.time?d.time+(d.end_time?' – '+d.end_time:'')+(d.time.includes('Uhr')?'':' Uhr'):'');
+  field('Ort',d.venue);root.append(meta);
+  if(d.body){const body=make('div','content club-event-detail-body');paragraphs(body,d.body);root.append(body)}
+  if(fallback)root.append(make('p','club-event-foot','Aktuell wird der zuletzt mit der Website veröffentlichte Terminstand angezeigt.'));
+  const url=safe(d.link);
+  if(url){
+   const u=new URL(url,location.origin);
+   if(u.pathname!=='/termine/detail/'||u.origin!==location.origin){
+    const actions=make('div','club-event-detail-actions'),a=make('a','detail-action','Weitere Informationen / Ausschreibung →');
+    a.href=url;
+    if(!['ntc93.de','www.ntc93.de','neu.ntc93.de',location.hostname].includes(u.hostname.toLowerCase())){a.target='_blank';a.rel='noopener noreferrer';a.textContent='Weitere Informationen / Ausschreibung ↗'}
+    actions.append(a);root.append(actions);
+   }
+  }
+ }
+ if(path==='/termine/detail/')eventDetail();
  if(path==='/'||path==='/news/')news();if(path==='/redaktion/')article();if(path==='/'||path==='/sponsoren/')sponsors();if(path==='/')notices();if(path==='/'||path==='/termine/')events();
 })();
